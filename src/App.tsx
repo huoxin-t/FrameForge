@@ -1,0 +1,559 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent as ReactDragEvent } from 'react';
+import type {
+  ConversionJob,
+  ConversionUpdate,
+  OutputFormat,
+  QualityPresetId,
+} from '../shared/conversion';
+import type { MediaItem } from '../shared/media';
+import { AppShell } from './components/AppShell';
+import { ConversionSettings } from './components/ConversionSettings';
+import { EmptyState } from './components/EmptyState';
+import { EnvironmentPanel } from './components/EnvironmentPanel';
+import { JobQueue } from './components/JobQueue';
+import { MediaList } from './components/MediaList';
+import type { AppInfoState, FfmpegState } from './types/ui';
+
+export default function App() {
+  const [appInfo, setAppInfo] = useState<AppInfoState>({ status: 'loading' });
+  const [ffmpeg, setFfmpeg] = useState<FfmpegState>({ status: 'loading' });
+  const [items, setItems] = useState<MediaItem[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [format, setFormat] = useState<OutputFormat>('mp4');
+  const [qualityPreset, setQualityPreset] =
+    useState<QualityPresetId>('compatible');
+  const [outputDirectory, setOutputDirectory] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<ConversionJob[]>([]);
+  const [starting, setStarting] = useState(false);
+  const [conversionError, setConversionError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const mountedRef = useRef(true);
+  const dragDepthRef = useRef(0);
+
+  const convertibleItems = useMemo(
+    () => items.filter((item) => item.metadata !== null && item.error === null),
+    [items],
+  );
+  const hasActiveJobs = jobs.some(
+    (job) => job.status === 'queued' || job.status === 'running',
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api) {
+      setAppInfo({ status: 'error', message: '桌面桥接未加载' });
+      setFfmpeg({ status: 'error', message: '桌面桥接未加载' });
+      return;
+    }
+
+    let active = true;
+
+    api
+      .getAppInfo()
+      .then((info) => {
+        if (active) {
+          setAppInfo({ status: 'ready', info });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setAppInfo({ status: 'error', message: toUserMessage(error) });
+        }
+      });
+
+    api
+      .getFfmpegStatus()
+      .then((status) => {
+        if (!active) {
+          return;
+        }
+        setFfmpeg(
+          status.available
+            ? { status: 'ready', info: status }
+            : {
+                status: 'error',
+                message: status.error ?? 'FFmpeg 未就绪',
+              },
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setFfmpeg({ status: 'error', message: toUserMessage(error) });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api || typeof api.onConversionUpdate !== 'function') {
+      return;
+    }
+
+    return api.onConversionUpdate((update: ConversionUpdate) => {
+      if (mountedRef.current) {
+        setJobs((current) => upsertConversionJob(current, update.job));
+      }
+    });
+  }, []);
+
+  const canImport = ffmpeg.status === 'ready' && !importing;
+
+  const applyImportedItems = useCallback((incoming: MediaItem[]) => {
+    if (incoming.length > 0) {
+      setItems((current) => mergeMediaItems(current, incoming));
+    }
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api || importing || ffmpeg.status !== 'ready') {
+      return;
+    }
+
+    setImportError(null);
+    setImporting(true);
+
+    try {
+      const selected = await api.selectVideos();
+      if (mountedRef.current) {
+        applyImportedItems(selected);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setImportError(toUserMessage(error));
+      }
+    } finally {
+      if (mountedRef.current) {
+        setImporting(false);
+      }
+    }
+  }, [applyImportedItems, ffmpeg.status, importing]);
+
+  const handleImportPaths = useCallback(
+    async (paths: string[]) => {
+      const api = window.desktopAPI;
+      if (!api || importing || ffmpeg.status !== 'ready' || paths.length === 0) {
+        return;
+      }
+
+      setImportError(null);
+      setImporting(true);
+
+      try {
+        const imported = await api.importVideos(paths);
+        if (mountedRef.current) {
+          applyImportedItems(imported);
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          setImportError(toUserMessage(error));
+        }
+      } finally {
+        if (mountedRef.current) {
+          setImporting(false);
+        }
+      }
+    },
+    [applyImportedItems, ffmpeg.status, importing],
+  );
+
+  const handleDragEnter = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes('Files')) {
+        return;
+      }
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      if (ffmpeg.status === 'ready' && !importing) {
+        setDragActive(true);
+      }
+    },
+    [ffmpeg.status, importing],
+  );
+
+  const handleDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDragLeave = useCallback(
+    (_event: ReactDragEvent<HTMLDivElement>) => {
+      // dragleave 的 dataTransfer.types 在部分 Chromium 版本里会变成空数组，
+      // 不能据此提前返回，否则覆盖层可能残留。
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setDragActive(false);
+      }
+    },
+    [],
+  );
+
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setDragActive(false);
+
+      const api = window.desktopAPI;
+      if (!api) {
+        setImportError('桌面桥接未加载');
+        return;
+      }
+
+      if (ffmpeg.status !== 'ready') {
+        setImportError('FFmpeg 未就绪，无法导入视频');
+        return;
+      }
+
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) {
+        setImportError('没有识别到可导入的文件');
+        return;
+      }
+
+      const paths = files
+        .map((file) => api.getPathForFile(file))
+        .filter((path) => Boolean(path));
+      if (paths.length === 0) {
+        setImportError('无法读取拖入文件的本地路径');
+        return;
+      }
+
+      void handleImportPaths(paths);
+    },
+    [ffmpeg.status, handleImportPaths],
+  );
+
+  const handleChooseDirectory = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setConversionError(null);
+    try {
+      const directory = await api.selectOutputDirectory();
+      if (mountedRef.current && directory) {
+        setOutputDirectory(directory);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    }
+  }, []);
+
+  const handleStartConversion = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (
+      !api ||
+      starting ||
+      ffmpeg.status !== 'ready' ||
+      !outputDirectory ||
+      convertibleItems.length === 0
+    ) {
+      return;
+    }
+
+    setConversionError(null);
+    setStarting(true);
+
+    try {
+      const created = await api.startConversions({
+        sourcePaths: convertibleItems.map((item) => item.path),
+        settings: {
+          format,
+          qualityPreset,
+          outputDirectory,
+        },
+      });
+
+      if (mountedRef.current) {
+        setJobs((current) => mergeStartedJobs(current, created));
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    } finally {
+      if (mountedRef.current) {
+        setStarting(false);
+      }
+    }
+  }, [
+    convertibleItems,
+    ffmpeg.status,
+    format,
+    outputDirectory,
+    qualityPreset,
+    starting,
+  ]);
+
+  const handleCancelConversion = useCallback(async (jobId: string) => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setConversionError(null);
+    try {
+      await api.cancelConversion(jobId);
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    }
+  }, []);
+
+  const handleOpenOutputFile = useCallback(async (jobId: string) => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setConversionError(null);
+    try {
+      await api.openOutputFile(jobId);
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    }
+  }, []);
+
+  const handleShowOutputInFolder = useCallback(async (jobId: string) => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setConversionError(null);
+    try {
+      await api.showOutputInFolder(jobId);
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    }
+  }, []);
+
+  const handleCopyError = useCallback(async (job: ConversionJob) => {
+    const api = window.desktopAPI;
+    if (!api) {
+      throw new Error('桌面桥接未加载');
+    }
+
+    const sections = [
+      `文件：${job.fileName}`,
+      `错误：${job.error ?? '未知错误'}`,
+    ];
+    if (job.logExcerpt) {
+      sections.push('', 'FFmpeg 日志：', job.logExcerpt);
+    }
+
+    setConversionError(null);
+    try {
+      await api.copyText(sections.join('\n'));
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+      throw error;
+    }
+  }, []);
+
+  const handleOpenLogDirectory = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setConversionError(null);
+    try {
+      await api.openLogDirectory();
+    } catch (error) {
+      if (mountedRef.current) {
+        setConversionError(toUserMessage(error));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        void handleImport();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        void handleStartConversion();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleImport, handleStartConversion]);
+
+  return (
+    <AppShell
+      version={appInfo.status === 'ready' ? appInfo.info.version : undefined}
+      ffmpeg={ffmpeg}
+    >
+      <div
+        data-testid="workspace-dropzone"
+        className="relative mx-auto grid min-h-full w-full max-w-[1360px] gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_340px]"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {dragActive ? (
+          <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-xl border-2 border-dashed border-amber-300/70 bg-[#0b0d12]/90">
+            <div className="text-center">
+              <p className="text-lg font-medium text-amber-200">松开以导入视频</p>
+              <p className="mt-1 text-xs text-slate-400">
+                支持 MP4、MOV、MKV、AVI、WebM
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="min-w-0">
+          {importError ? (
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-xs leading-5 text-rose-200"
+            >
+              导入失败：{importError}
+            </div>
+          ) : null}
+
+          {items.length === 0 ? (
+            <EmptyState
+              onImport={handleImport}
+              importing={importing}
+              disabled={!canImport}
+            />
+          ) : (
+            <MediaList
+              items={items}
+              onImport={handleImport}
+              importing={importing}
+              disabled={!canImport}
+            />
+          )}
+        </div>
+
+        <aside className="min-w-0 space-y-4">
+          {convertibleItems.length > 0 ? (
+            <ConversionSettings
+              format={format}
+              qualityPreset={qualityPreset}
+              outputDirectory={outputDirectory}
+              itemCount={convertibleItems.length}
+              starting={starting}
+              disabled={ffmpeg.status !== 'ready' || hasActiveJobs}
+              error={conversionError}
+              onFormatChange={setFormat}
+              onQualityPresetChange={setQualityPreset}
+              onChooseDirectory={handleChooseDirectory}
+              onStart={handleStartConversion}
+            />
+          ) : null}
+
+          <JobQueue
+            jobs={jobs}
+            onCancel={handleCancelConversion}
+            onOpenOutput={handleOpenOutputFile}
+            onOpenOutputDirectory={handleShowOutputInFolder}
+            onCopyError={handleCopyError}
+            onOpenLogDirectory={handleOpenLogDirectory}
+          />
+          <EnvironmentPanel
+            state={appInfo}
+            ffmpeg={ffmpeg}
+            onOpenLogDirectory={handleOpenLogDirectory}
+          />
+        </aside>
+      </div>
+    </AppShell>
+  );
+}
+
+/** 按绝对路径去重；重复导入同一文件不会产生第二张卡片。 */
+export function mergeMediaItems(
+  current: MediaItem[],
+  incoming: MediaItem[],
+): MediaItem[] {
+  const byPath = new Map(current.map((item) => [item.path, item]));
+
+  for (const item of incoming) {
+    if (!byPath.has(item.path)) {
+      byPath.set(item.path, item);
+    }
+  }
+
+  return [...byPath.values()];
+}
+
+/** 更新单个任务；事件可能先于 startConversions 的返回值到达。 */
+export function upsertConversionJob(
+  current: ConversionJob[],
+  incoming: ConversionJob,
+): ConversionJob[] {
+  const index = current.findIndex((job) => job.id === incoming.id);
+  if (index < 0) {
+    return [...current, incoming];
+  }
+
+  const next = [...current];
+  next[index] = incoming;
+  return next;
+}
+
+/** 启动响应只补充新任务，不能把已经到达的更新状态回退。 */
+export function mergeStartedJobs(
+  current: ConversionJob[],
+  created: ConversionJob[],
+): ConversionJob[] {
+  const known = new Set(current.map((job) => job.id));
+  const next = [...current];
+
+  for (const job of created) {
+    if (!known.has(job.id)) {
+      known.add(job.id);
+      next.push(job);
+    }
+  }
+
+  return next;
+}
+
+function toUserMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.replace(
+      /^Error invoking remote method '[^']+': Error: /,
+      '',
+    );
+  }
+  return '操作失败，请重试';
+}

@@ -1,0 +1,28 @@
+# AOCI agent host integration (machine-bound; do not commit)
+opencode.json
+opencode.json.backup.*
+
+# Node / Electron
+node_modules/
+out/
+dist/
+release/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test artifacts (generated fixtures and reports are not source)
+test-results/
+coverage/
+test/fixtures/generated/
+
+# Local FFmpeg binaries prepared for packaging; never commit third-party binaries
+resources/ffmpeg/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
