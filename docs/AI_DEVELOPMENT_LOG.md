@@ -1020,3 +1020,143 @@ npm run dist:dir    生成 release/win-unpacked/FrameForge.exe
 - M1 通过后再进入 M2（格式能力层、WebM、MP3）。
 - 详细顺序和验收标准以 `docs/DELIVERY_PLAN.md` 为准。
 
+
+---
+
+## 2026-10-21｜M1：Windows 最小可交付基线
+
+### 本轮目标
+
+- 把 FFmpeg/FFprobe 真正放进 Windows 安装包；
+- 保留旧的 flat 资源目录兼容，新增 `<platform>-<arch>` 布局；
+- 移除主界面开发者环境面板，但保留 FFmpeg 缺失错误和恢复入口；
+- 生成 NSIS 安装包和完整目录 zip；
+- 在移除系统 PATH 和 FFmpeg 覆盖环境变量的条件下做真实 E2E；
+- 保持“主函数只调用”的编排风格。
+
+### 真实 RED
+
+先新增 `test/phase-05-delivery.test.tsx`，覆盖：
+
+- 打包/开发模式的 `resources/ffmpeg/<platform>-<arch>` 解析；
+- 旧 flat 目录回退；
+- `package.json` 的 FFmpeg extraResources、NSIS 和 zip 目标；
+- 主界面不再出现“运行环境 / Node.js / FFmpeg 路径”；
+- FFmpeg 缺失时显示“视频引擎未就绪”、重新检测和日志入口；
+- 缺失错误不要求普通用户自己安装 FFmpeg。
+
+执行：
+
+```text
+npx vitest run test/phase-05-delivery.test.tsx
+6 failed / 6
+```
+
+RED 记录：`test-results/phase5-delivery-red.log`。
+
+### 实现
+
+1. 新增 `electron/main/services/ffmpeg/layout.ts`
+   - `getPlatformArchDirectoryName()`；
+   - `getBundledFfmpegDirectories()`：先 `<platform>-<arch>`，再旧 flat 目录；
+   - 去重，避免打包模式下重复检查同一路径。
+
+2. 更新 `resolver.ts`
+   - 支持 `arch` 参数；
+   - 随包候选全部走 layout；
+   - 环境变量仍最优先，系统 PATH 最后。
+
+3. 新增 `scripts/prepare-ffmpeg.mjs`
+   - 支持 `FRAMEFORGE_FFMPEG_SOURCE` / `FRAMEFORGE_FFMPEG_DIR` / 系统 PATH；
+   - 复制 exe、全部 Windows DLL、LICENSE、README；
+   - 通过 `spawn(executable, ['-version'], { shell: false })` 真实验证；
+   - 写入 `bundle-manifest.json`。
+
+4. 打包配置
+   - `extraResources` 复制 `resources/ffmpeg` → `resources/ffmpeg`；
+   - Windows 目标：NSIS + zip；
+   - 自定义 `build/icon.ico`；
+   - 新增 `npm run prepare:ffmpeg`、`npm run e2e:packaged`。
+
+5. 主界面
+   - 删除 `EnvironmentPanel`；
+   - 新增 `FfmpegErrorBanner`，提供“重新检测”和“打开日志目录”；
+   - 底栏保留“打开日志目录”入口；
+   - `App` 的 FFmpeg 状态映射提取为 `toFfmpegState()`。
+
+### 测试与构建结果
+
+```text
+npx vitest run test/phase-05-delivery.test.tsx   6/6 通过
+npm test                                          5 个文件，93/93 通过
+npm run typecheck                                 通过
+npm run dist:dir                                  成功
+npm run dist:win                                  成功
+```
+
+产物：
+
+```text
+release/FrameForge Setup 0.1.0.exe   167 MB
+release/FrameForge-0.1.0-win.zip     230.6 MB
+release/win-unpacked/                目录版
+```
+
+### 无 PATH 打包版 E2E
+
+执行：
+
+```text
+npm run e2e:packaged
+```
+
+启动参数中移除 `PATH`、`FRAMEFORGE_FFMPEG_DIR`、`FRAMEFORGE_FFMPEG_SOURCE`，真实结果：
+
+```text
+source: bundled
+ffmpeg: 8.0.1
+ffmpegPath: release/win-unpacked/resources/ffmpeg/win32-x64/ffmpeg.exe
+importMode: drag-drop
+输入: 阶段五 真实 视频.mp4（640×360，2000ms）
+输出: 阶段五 真实 视频_converted.mp4，49,555 字节
+输出探测: H.264 640×360
+```
+
+截图：`docs/evidence/phase5-packaged.png`。
+
+### 安装包 smoke test
+
+- NSIS 静默安装到 `test-results/phase5-install/FrameForge`，安装器退出码 0；
+- 安装目录包含 `resources/ffmpeg/win32-x64/ffmpeg.exe`、`ffprobe.exe`、全部 DLL、LICENSE 和 manifest；
+- 对安装版执行同一套无 PATH E2E，结果为 `source: bundled`，真实输出 H.264 640×360；
+- 截图：`docs/evidence/phase5-installed.png`。
+
+### 遇到的问题
+
+- `prepare-ffmpeg.mjs` 首次运行缺少 `stripQuotes` 定义；补上后重新执行成功。
+- 去掉环境面板后，底栏和 FFmpeg 错误面板都可能出现“打开日志目录”；阶段 5 UI 测试改为在 `role="alert"` 范围内查找，避免多匹配。
+- 旧阶段 1/2/4 测试仍断言环境面板或旧错误文案，已按新交付行为更新，不保留“测试通过但界面仍展示开发者信息”的假绿。
+
+### 文档
+
+- 新增 `docs/TEST_PLAN.md`；
+- 新增 `THIRD_PARTY_NOTICES.md`；
+- 重写 `docs/FFMPEG.md`；
+- 更新 `README.md`、`docs/DELIVERY_PLAN.md` 状态板；
+- 记录真实证据日志：`test-results/phase5-*`。
+
+### 完整目录 zip 与卸载
+
+- 把 `release/FrameForge-0.1.0-win.zip` 解压到 `test-results/phase5-zip/`；
+- 确认 zip 内包含 `FrameForge.exe`、`resources/ffmpeg/win32-x64/ffmpeg.exe`、`ffprobe.exe`、`bundle-manifest.json` 和 `THIRD_PARTY_NOTICES.md`；
+- 对解压版执行同一套无 PATH E2E，结果 `source: bundled`，真实输出 H.264 640×360；
+- 截图：`docs/evidence/phase5-zip.png`；
+- 重新安装最终安装包到新目录，确认 `resources/THIRD_PARTY_NOTICES.md` 存在，并再次通过无 PATH E2E；
+- 执行 `Uninstall FrameForge.exe /S`，退出码 0，安装目录被清理；日志：`test-results/phase5-e2e-zip.log`、`test-results/phase5-e2e-installed-final.log`、`test-results/phase5-uninstall.log`。
+
+### 未完成 / 风险
+
+- 独立干净 Windows VM 的安装、取消、打开输出、卸载验收仍需 M6 完成；
+- 安装包未签名，可能出现 SmartScreen 提示；
+- FFmpeg 为 GPLv3 shared build，已保留许可证和源码获取说明，但正式发布前仍需维护者确认合规；
+- M2 格式能力层尚未开始。

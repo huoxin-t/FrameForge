@@ -64,7 +64,7 @@ export class FfmpegService {
           ffprobeVersion: null,
           source: null,
           error:
-            '未找到 FFmpeg。请安装 FFmpeg 并加入 PATH，或将 ffmpeg.exe 与 ffprobe.exe 放入 resources/ffmpeg 目录。',
+            '未找到内置 FFmpeg。FrameForge 应随包提供 ffmpeg 与 ffprobe；请重新安装应用，或打开日志目录查看详情。',
         };
         logger.warn('FFmpeg environment unavailable', { error: this.cached.error });
         return this.cached;

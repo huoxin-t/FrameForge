@@ -2,9 +2,9 @@
 
 > 这份文档面向要接手、讲解或继续开发 FrameForge 的人。目标不是重复 README 的功能列表，而是把“用户点一下按钮之后，代码到底发生了什么”讲清楚。
 >
-> 当前基线：**阶段 4（功能型产品体验）已完成，阶段 5（交付加固）尚未开始**。视觉方向也还没有最终确定。
+> 当前基线：**阶段 4（功能型产品体验）和 M1（Windows 最小可交付基线）已完成**。FFmpeg 已随安装包分发，安装版在移除系统 PATH 后仍能真实转换；M2（WebM/MP3）尚未开始。视觉方向也还没有最终确定。
 >
-> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于阶段 5 的计划会明确标注为“待完成”。
+> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于 M2/M3/M6 的计划会明确标注为“待完成”。
 
 ### 阅读地图
 
@@ -59,10 +59,10 @@ Electron 桌面壳
 | 获取并显示缩略图 | 主进程调用 `ffmpeg` 抽单帧，输出 320×180 JPEG，以 data URL 交给 UI | 已实现，缩略图失败可降级 |
 | 用 FFmpeg 命令行转换 | `spawn(executablePath, args, { shell: false })`，参数数组构造 | 已实现，MP4/MKV 真实转换通过 |
 | 自己做一些优化 | 串行队列、临时文件、冲突避让、取消、拖拽、快捷键、关闭保护、错误复制、日志 | 已实现 |
-| 会话总结与开发者决策记录 | `docs/AI_DEVELOPMENT_LOG.md` 已记录每阶段决策、反馈、RED/GREEN 和真实问题 | 开发日志已完成；最终 `SESSION_SUMMARY.md` 待阶段 5 |
-| 项目提交 GitHub | 当前没有执行 Git 提交 | 未完成 |
+| 会话总结与开发者决策记录 | `docs/AI_DEVELOPMENT_LOG.md` 记录每阶段决策、反馈、RED/GREEN；`docs/SESSION_SUMMARY.md` 已形成 M1 版本 | 已有总结；M6 更新最终版 |
+| 项目提交 GitHub | 已有基线提交 `87d5395`、`1f74c6d` 推送到 `origin/main`；M1 变更待提交 | 进行中 |
 | 界面选型与“客户端”关联 | Electron 桌面窗口、原生文件/目录选择器、本地路径、真实子进程 | 客户端关联已成立；整体视觉方向待确认 |
-| 设计给人用、自己测试过 | 87 个自动化测试、真实 FFmpeg 集成、目录版打包 E2E、截图和证据日志 | 核心功能已验证；安装包和干净机器验证待阶段 5 |
+| 设计给人用、自己测试过 | 93 个自动化测试、真实 FFmpeg 集成、无 PATH 的目录版/安装版 E2E、截图和证据日志 | 核心功能和 Windows 安装包已验证；独立干净 VM 和卸载待 M6 |
 
 这张表很重要：它既说明项目做了什么，也说明现在还**不能**对外宣称什么。面试或答辩时，边界要讲清楚。
 
@@ -78,7 +78,7 @@ Electron 桌面壳
 | 样式 | Tailwind CSS 4 | 布局、间距、颜色、响应式 |
 | 图标 | lucide-react | 统一的线性图标 |
 | 测试 | Vitest 5 + Testing Library | 纯函数、服务、IPC、React UI、真实进程集成 |
-| 打包 | electron-builder 26 | 生成 Windows 目录版/安装包（安装包待阶段 5） |
+| 打包 | electron-builder 26 | 生成 Windows 目录版、NSIS 安装包和完整目录 zip |
 | 媒体探测 | `ffprobe` CLI | JSON 元数据 |
 | 媒体处理 | `ffmpeg` CLI | 缩略图、转码、进度输出 |
 | 日志 | electron-log 5 | 控制台 + 文件日志 |
@@ -766,12 +766,13 @@ progress=end
 `electron/main/services/ffmpeg/resolver.ts` 按以下顺序查找：
 
 1. `FRAMEFORGE_FFMPEG_DIR` 环境变量；
-2. 随包目录：
-   - 打包模式：`process.resourcesPath/ffmpeg`
-   - 开发模式：`<项目根>/resources/ffmpeg`
-3. 系统 `PATH` 中的每个目录。
+2. 随包目录，按平台/架构分层：
+   - 打包模式：`process.resourcesPath/ffmpeg/<platform>-<arch>/`
+   - 开发模式：`<项目根>/resources/ffmpeg/<platform>-<arch>/`
+3. 旧的平铺随包目录：`resources/ffmpeg/`（兼容旧产物）；
+4. 系统 `PATH` 中的每个目录。
 
-只有在**同一目录**下同时存在 `ffmpeg` 和 `ffprobe` 才算一个候选。这样避免把两个版本不匹配的二进制拼在一起。
+`layout.ts` 负责生成候选目录，resolver 负责成对校验。只有在**同一目录**下同时存在 `ffmpeg` 和 `ffprobe` 才算一个候选。这样避免把两个版本不匹配的二进制拼在一起。
 
 Windows 下会自动加 `.exe` 后缀。
 
@@ -788,14 +789,14 @@ ffprobe -version
 
 状态会缓存。启动预热和 renderer 首次请求可能同时发生，`FfmpegService` 用 `pending` Promise 共享同一次检测，避免启动两对进程。
 
-### 10.3 当前限制
+### 10.3 随包状态
 
-- 当前开发机使用系统 PATH 中的 FFmpeg 8.0.1 full build；
-- 打包版目前仍会回退系统 PATH；
-- **FFmpeg 二进制还没有随安装包分发**；
-- 当前系统构建是 GPL 构建（`--enable-gpl --enable-version3`），正式分发前必须核对许可证义务。
+- 安装包内置 `ffmpeg 8.0.1-full_build-www.gyan.dev` Windows x64 shared build；
+- 随包目录包含 `ffmpeg.exe`、`ffprobe.exe`、全部依赖 DLL、`LICENSE`、`README.txt` 和 `bundle-manifest.json`；
+- 打包版和安装版在移除 `PATH`、`FRAMEFORGE_FFMPEG_DIR` 后，状态返回 `source: "bundled"`；
+- 当前构建是 GPLv3 构建（`--enable-gpl --enable-version3`），正式分发前仍需核对许可证和源码提供方式。
 
-这些是阶段 5 的工作，不能把“开发机能跑”当成“装到别人电脑上也能跑”。
+可复现的验证见 `docs/TEST_PLAN.md` 和 `scripts/e2e-packaged.mjs`。
 
 ---
 
@@ -814,18 +815,18 @@ ffprobe -version
 │ - MediaList（已导入文件）          │ - 开始转换               │
 │                                   ├──────────────────────────┤
 │                                   │ JobQueue（任务队列）      │
-│                                   ├──────────────────────────┤
-│                                   │ EnvironmentPanel（环境）  │
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-- `AppShell.tsx`：顶栏、整体背景、FFmpeg 状态；
+- `AppShell.tsx`：顶栏、整体背景、FFmpeg 状态、底栏日志入口；
+- `FfmpegErrorBanner.tsx`：FFmpeg 缺失/损坏时的阻塞式错误、重新检测、日志入口；
 - `EmptyState.tsx`：空状态和“添加视频”入口；
 - `MediaList.tsx`：列表容器和“继续添加”；
 - `MediaCard.tsx`：缩略图、文件名、路径、元数据、错误；
 - `ConversionSettings.tsx`：格式、预设、输出目录、开始按钮；
-- `JobQueue.tsx`：任务汇总、进度、取消、打开输出、复制错误；
-- `EnvironmentPanel.tsx`：应用版本、FFmpeg 版本/来源、日志入口。
+- `JobQueue.tsx`：任务汇总、进度、取消、打开输出、复制错误。
+
+主界面不再展示 Electron / Node / FFmpeg 版本和路径。
 
 ### 11.2 App 维护的状态
 
@@ -942,12 +943,12 @@ spawn(options.executable, options.args, {
 ### 12.6 还没有做的安全/交付项
 
 - 代码签名；
-- 安装包完整性校验；
+- 安装包完整性校验和 SHA256 资产清单；
 - 自动更新；
-- FFmpeg 二进制来源与许可证最终核对；
-- 干净机器无 PATH 的安装包验证。
+- FFmpeg 二进制来源与 GPL 合规的最终确认；
+- 独立干净 Windows VM 的安装包验证和卸载。
 
-这些属于阶段 5，不应在文档里伪装成已完成。
+这些属于 M6 最终交付，不应在文档里伪装成已完成。
 
 ---
 
@@ -1006,9 +1007,10 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 | `test/phase-02-media.test.tsx` | 路径校验、FFprobe 解析、FFmpeg 解析、缩略图、导入 UI | 26 |
 | `test/phase-03-conversion.test.tsx` | 参数、进度、队列、真实转换、取消、失败、UI | 23 |
 | `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、UI | 14 |
-| **合计** | | **87** |
+| `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 | 6 |
+| **合计** | | **93** |
 
-2026-10-21 的真实结果：4 个测试文件、87 个测试全部通过，无 skip。
+2026-10-21 的真实结果：5 个测试文件、93 个测试全部通过，无 skip。
 
 ### 14.2 测试层次
 
@@ -1029,7 +1031,10 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 - MP4/MKV 真实输出；
 - 进度来自真实 FFmpeg；
 - 失败任务不阻塞后续任务；
-- 未完成任务不允许打开输出。
+- 未完成任务不允许打开输出；
+- 打包版/安装版在无系统 PATH 时使用 `source: "bundled"`；
+- 中文/空格路径视频的真实拖拽导入、缩略图和 MP4 转换；
+- 用随包 `ffprobe` 验证输出为 H.264 640×360。
 
 ### 14.4 测试先行
 
@@ -1050,10 +1055,10 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 - 原生文件选择器的真实点击；
 - 原生关闭确认框的真实点击；
 - 系统“打开文件”和“打开资源管理器”窗口的反复自动化；
-- 安装包在干净机器上的安装/卸载；
+- 独立干净 Windows VM 的安装/卸载（本机已完成“新目录安装 + 无 PATH”验证）；
 - 多文件真实拖拽（多文件逻辑有单元测试，但 E2E 只拖过一个文件）。
 
-这些要如实写进 `TEST_PLAN.md`，不能因为单元测试通过就说“全部人工流程已验证”。
+这些要如实写进 [TEST_PLAN.md](TEST_PLAN.md)，不能因为单元测试通过就说“全部人工流程已验证”。
 
 ---
 
@@ -1062,13 +1067,15 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 ### 15.1 常用命令
 
 ```bash
-npm install       # 安装依赖
-npm run dev       # 开发模式，启动真实 Electron 窗口
-npm test          # Vitest，真实 FFmpeg 集成用例会实际启动进程
-npm run typecheck # TypeScript 类型检查
-npm run build     # 构建 main / preload / renderer 到 out/
-npm run dist:dir  # 构建免安装目录版
-npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
+npm install             # 安装依赖
+npm run prepare:ffmpeg  # 准备 resources/ffmpeg/<platform>-<arch>/
+npm run dev             # 开发模式，启动真实 Electron 窗口
+npm test                # Vitest，真实 FFmpeg 集成用例会实际启动进程
+npm run typecheck       # TypeScript 类型检查
+npm run build           # 构建 main / preload / renderer 到 out/
+npm run dist:dir        # 构建免安装目录版
+npm run dist:win        # 构建 NSIS 安装包 + 完整目录 zip
+npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 ```
 
 ### 15.2 构建产物
@@ -1076,8 +1083,9 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 - `out/main/index.js`：主进程；
 - `out/preload/index.js`：preload；
 - `out/renderer/index.html`：renderer；
-- `release/win-unpacked/FrameForge.exe`：当前目录版可执行文件；
-- `release/*.exe`：安装包（尚未正式构建/验证）。
+- `release/win-unpacked/FrameForge.exe`：目录版可执行文件；
+- `release/FrameForge Setup 0.1.0.exe`：NSIS 安装包；
+- `release/FrameForge-0.1.0-win.zip`：完整目录 zip。
 
 ### 15.3 当前打包状态
 
@@ -1085,36 +1093,38 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 
 - `npm run build` 通过；
 - `npm run dist:dir` 通过；
-- 目录版启动并显示 FFmpeg 已就绪；
-- 通过 CDP 做真实拖拽导入和真实转换。
+- `npm run dist:win` 通过；
+- 自定义应用图标；
+- FFmpeg/FFprobe、DLL、LICENSE、README 和 manifest 随包；
+- 目录版和安装版在移除 PATH 后都返回 `source: "bundled"`；
+- 通过 CDP 做真实拖拽导入、缩略图和真实 MP4 转换；
+- NSIS 静默安装到新目录，安装器退出码 0。
 
 尚未完成：
 
-- `npm run dist:win` 生成安装包；
-- 应用图标和安装器元数据；
-- FFmpeg 二进制随包；
-- 干净机器无系统 PATH 验证；
-- 代码签名；
-- 安装包许可证/第三方声明。
+- 独立干净 Windows VM 的安装、取消、打开输出、卸载；
+- 代码签名和 SmartScreen 信誉；
+- 完整目录 zip 的解压运行抽测；
+- GPL 合规的法律确认和最终源码提供方式；
+- M2/M3 新格式与高级设置。
 
 ### 15.4 FFmpeg 分发与许可证
 
-这是阶段 5 最容易踩坑的部分。
+当前随包 FFmpeg 8.0.1 full build（Windows x64 shared build），构建参数包含 `--enable-gpl --enable-version3`，是 GPLv3 构建。已经：
 
-当前开发机使用系统 FFmpeg 8.0.1 full build，构建参数包含 `--enable-gpl --enable-version3`，是 GPL 构建。若随安装包分发，需要：
+- 复制全部依赖 DLL；
+- 保留 `LICENSE`、`README.txt` 和 `bundle-manifest.json`；
+- 在 `THIRD_PARTY_NOTICES.md` 写清版本、来源、构建参数和源码获取方式；
+- 通过 `spawn(executable, ['-version'], { shell: false })` 真实验证；
+- 在移除 PATH 的目录版/安装版中验证转换。
 
-- 保留版权与许可证声明；
-- 按 GPL 要求提供对应源代码或获取方式；
-- 在 README/第三方声明中写清版本、来源和构建选项；
-- 不要因为“npm 能装”就认为再分发义务已经处理。
+仍需：
 
-可选方案：
+- 维护者确认 GPL 合规和源码提供方式；
+- 决定最终使用静态构建还是 shared build；
+- 正式发布前保留第三方声明和安装包校验和。
 
-- 随包分发静态构建，只复制 `ffmpeg.exe` / `ffprobe.exe`；
-- 随包分发 shared build，但必须把依赖 DLL 一起复制；
-- 不随包，要求用户自行安装并加入 PATH（体验较差，但许可证和体积压力小）。
-
-无论选哪种，都要在**没有系统 FFmpeg PATH** 的机器上真实验证。
+详细说明见 [FFMPEG.md](FFMPEG.md)。
 
 ---
 
@@ -1280,20 +1290,19 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 
 不要在这一阶段做大规模视觉重写。先保证功能闭环，再谈视觉。
 
-### 17.6 阶段 5：交付加固
+### 17.6 M1：交付基线（已完成）
 
-只做：
+已完成：
 
-- 安装包；
-- 图标；
+- 安装包和完整目录 zip；
+- 自定义图标；
 - FFmpeg 随包；
-- 干净机器验证；
-- 许可证；
-- `TEST_PLAN.md`；
-- `SESSION_SUMMARY.md`；
-- README 校准；
-- 仓库清理；
-- Git 提交。
+- 无 PATH 的目录版/安装版真实转换；
+- `THIRD_PARTY_NOTICES.md`、`TEST_PLAN.md`；
+- README、FFMPEG、DELIVERY_PLAN 校准；
+- 93 个测试全绿。
+
+下一步是 M2 格式能力层 + WebM/MP3；M6 再做最终安装包、独立干净 VM、`SESSION_SUMMARY.md`、GitHub Release。
 
 ### 17.7 给弱模型的每轮任务模板
 
@@ -1363,19 +1372,21 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 - 输出名冲突不覆盖；
 - 取消真实子进程；
 - 100% 只在文件验证后出现；
-- 87 个测试和真实打包版 E2E；
+- 93 个测试和真实打包版/安装版无 PATH E2E；
+- 安装包内置 FFmpeg，`source: "bundled"` 可验证；
 - 开发日志保留了决策、反馈、RED/GREEN 和真实问题。
 
 ### 18.3 不要过度宣称
 
-以下话现在不能说：
+以下话现在仍不能说：
 
-- “安装包已经做好”（没有）；
-- “FFmpeg 已经随包分发”（没有）；
+- “独立干净 Windows VM 已经完整验收”（没有，只做了本机新目录安装 + 无 PATH）；
+- “卸载流程已经自动化验证”（没有）；
 - “所有系统窗口都自动化测试过”（没有）；
 - “视觉设计已经定稿”（没有）；
-- “项目已经提交 GitHub”（没有）；
-- “所有场景都覆盖了”（多文件拖拽、安装包干净机器等还没做）。
+- “WebM/MP3/高级设置已经完成”（没有，属于 M2/M3）；
+- “GPL 合规已经由法律确认”（没有，只保留了声明和源码获取方式）；
+- “所有场景都覆盖了”（多文件拖拽、干净 VM、代码签名等还没做）。
 
 诚实说明边界，比夸大更加分。
 
@@ -1416,7 +1427,7 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 
 ---
 
-## 21. 当前限制与阶段 5 待办
+## 21. 当前限制与 M2/M6 待办
 
 ### 21.1 当前限制
 
@@ -1424,15 +1435,17 @@ npm run dist:win  # 构建 Windows 安装包（阶段 5 收尾）
 - 输出目录、格式、质量预设不持久化；
 - 不支持字幕轨保留；
 - 不做硬件加速；
-- 只有 MP4/MKV 和 H.264 预设；
+- 只有 MP4/MKV 和 H.264 预设；WebM/MP3 待 M2；
 - 视觉方向尚未最终确定；
 - 原生关闭对话框的真实点击未自动化；
 - 系统“打开文件/打开目录”窗口未反复自动化；
 - 多文件拖拽有单元测试，但真实 E2E 只覆盖单文件；
-- FFmpeg 尚未随包；
-- 安装包、图标、代码签名未完成；
-- `docs/TEST_PLAN.md`、`docs/SESSION_SUMMARY.md` 尚未创建；
-- 没有 Git 提交。
+- 独立干净 Windows VM 的安装/取消/打开输出/卸载尚未执行；
+- 安装包未代码签名，可能出现 SmartScreen 提示；
+- `docs/SESSION_SUMMARY.md` 已创建 M1 版本，M6 需要更新最终版；`docs/TEST_PLAN.md` 已创建；
+- GPL 合规仍需维护者确认；
+- 完整目录 zip 仍需解压运行抽测；
+- M2/M3 功能尚未开始。
 
 ### 21.2 下一步计划
 
@@ -1440,11 +1453,11 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 
 摘要：
 
-1. 先做最小可交付基线：FFmpeg 随包、安装包打样、移除主界面环境面板；
-2. 再做格式能力层、WebM/MP3、高级设置和只读命令预览；
-3. 然后做动态剩余时间；
+1. M1 已完成：FFmpeg 随包、安装包打样、环境面板移除、无 PATH 真实转换；
+2. 进入 M2：格式能力层、WebM/MP3；
+3. 再做 M3：高级设置、只读命令预览、动态剩余时间；
 4. 功能冻结后再做视觉；
-5. 最后做最终安装包、干净机器 E2E、文档和 GitHub 发布。
+5. 最后做最终安装包、独立干净 VM、`SESSION_SUMMARY.md` 和 GitHub Release。
 
 ---
 
@@ -1456,7 +1469,7 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 2. **界面和系统能力是分开的**：React 只调用 13 个 preload 方法，主进程负责文件、进程和队列。
 3. **转换是真的**：`spawn` 参数数组、真实进度、临时文件、输出校验、不覆盖同名文件。
 4. **失败是被设计过的**：坏文件、无音轨、缩略图失败、取消、关闭窗口、FFmpeg 缺失都有路径。
-5. **证据比自述重要**：87 个测试、真实 RED/GREEN、打包版 E2E、日志和截图，才是项目完成度的证明。
+5. **证据比自述重要**：93 个测试、真实 RED/GREEN、无 PATH 的打包版/安装版 E2E、日志和截图，才是项目完成度的证明。
 
 ---
 

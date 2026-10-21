@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { Film, ShieldCheck } from 'lucide-react';
+import { Film, FolderOpen, ShieldCheck } from 'lucide-react';
 import type { FfmpegState } from '../types/ui';
 
 interface AppShellProps {
   version?: string;
   ffmpeg: FfmpegState;
+  onOpenLogDirectory: () => void;
   children: ReactNode;
 }
 
@@ -41,7 +42,12 @@ function FfmpegBadge({ state }: { state: FfmpegState }) {
   );
 }
 
-export function AppShell({ version, ffmpeg, children }: AppShellProps) {
+export function AppShell({
+  version,
+  ffmpeg,
+  onOpenLogDirectory,
+  children,
+}: AppShellProps) {
   return (
     <div className="relative isolate flex h-screen flex-col overflow-hidden bg-[#0b0d12] text-slate-200">
       <div
@@ -80,7 +86,17 @@ export function AppShell({ version, ffmpeg, children }: AppShellProps) {
 
       <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-white/10 px-6 py-2 text-[11px] text-slate-500">
         <span>本地转换 · 输出文件验证后才算完成</span>
-        <span className="hidden font-mono sm:inline">Ctrl+O 导入 · Ctrl+Enter 开始</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onOpenLogDirectory}
+            className="inline-flex items-center gap-1 text-slate-500 transition hover:text-slate-300"
+          >
+            <FolderOpen size={12} aria-hidden="true" />
+            打开日志目录
+          </button>
+          <span className="hidden font-mono sm:inline">Ctrl+O 导入 · Ctrl+Enter 开始</span>
+        </div>
       </footer>
     </div>
   );

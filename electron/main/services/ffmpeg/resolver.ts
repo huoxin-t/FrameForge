@@ -4,8 +4,9 @@
  * 解析顺序：
  * 1. FRAMEFORGE_FFMPEG_DIR 环境变量（便于开发、测试和用户手工指定）；
  * 2. 随包目录：
- *    - 打包模式：process.resourcesPath/ffmpeg
- *    - 开发模式：<appPath>/resources/ffmpeg
+ *    - 打包模式：process.resourcesPath/ffmpeg/<platform>-<arch>
+ *    - 开发模式：<appPath>/resources/ffmpeg/<platform>-<arch>
+ *    - 同时兼容旧的平铺目录 resources/ffmpeg
  * 3. 系统 PATH。
  *
  * 只有同一目录下 ffmpeg 与 ffprobe 同时存在时才算一个候选，
@@ -16,6 +17,7 @@ import { access as fsAccess } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { createLogger } from '../logger';
 import type { FfmpegSource } from '../../../../shared/media';
+import { getBundledFfmpegDirectories } from './layout';
 
 const logger = createLogger('ffmpeg-resolver');
 
@@ -32,6 +34,7 @@ export interface ResolveFfmpegOptions {
   appPath: string;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
+  arch?: string;
   access?: (path: string) => Promise<boolean>;
 }
 
@@ -52,9 +55,13 @@ export async function resolveFfmpegPaths(
   logger.debug('Resolving FFmpeg paths', {
     packaged: options.isPackaged,
     explicitDirectory: Boolean(env.FRAMEFORGE_FFMPEG_DIR),
-    bundledDirectory: options.isPackaged
-      ? join(options.resourcesPath, 'ffmpeg')
-      : join(options.appPath, 'resources', 'ffmpeg'),
+    bundledDirectories: getBundledFfmpegDirectories({
+      isPackaged: options.isPackaged,
+      resourcesPath: options.resourcesPath,
+      appPath: options.appPath,
+      platform,
+      arch: options.arch,
+    }),
     pathEntryCount: (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean).length,
   });
 
@@ -117,15 +124,14 @@ function buildCandidates(
 
   add(env.FRAMEFORGE_FFMPEG_DIR, 'environment');
 
-  if (options.isPackaged) {
-    add(join(options.resourcesPath, 'ffmpeg'), 'bundled');
-  } else {
-    add(join(options.appPath, 'resources', 'ffmpeg'), 'bundled');
-  }
-
-  // 开发模式下也允许从 Electron 的 resources 目录读取，便于免安装目录测试。
-  if (options.resourcesPath) {
-    add(join(options.resourcesPath, 'ffmpeg'), 'bundled');
+  for (const directory of getBundledFfmpegDirectories({
+    isPackaged: options.isPackaged,
+    resourcesPath: options.resourcesPath,
+    appPath: options.appPath,
+    platform: options.platform,
+    arch: options.arch,
+  })) {
+    add(directory, 'bundled');
   }
 
   const pathValue = env.PATH ?? env.Path ?? '';

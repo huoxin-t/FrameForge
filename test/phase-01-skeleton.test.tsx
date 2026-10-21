@@ -507,7 +507,7 @@ describe('阶段 1 / 工作台组件', () => {
     });
   });
 
-  it('渲染工作台和真实运行环境信息', async () => {
+  it('渲染工作台，但不在主界面展示开发者运行环境', async () => {
     appLogger.info('STEP 渲染 App');
     render(<App />);
 
@@ -515,13 +515,14 @@ describe('阶段 1 / 工作台组件', () => {
     expect(screen.getByText('FrameForge')).toBeInTheDocument();
     expect(screen.getByText('还没有导入视频')).toBeInTheDocument();
 
-    appLogger.info('STEP 等待异步 getAppInfo 并断言运行环境');
-    expect(await screen.findByText('45.0.0')).toBeInTheDocument();
-    expect(screen.getByText('0.1.0')).toBeInTheDocument();
-    expect(screen.getByText('win32 · x64')).toBeInTheDocument();
+    appLogger.info('STEP 等待版本号，并确认环境面板已移除');
+    expect(await screen.findByText('v0.1.0')).toBeInTheDocument();
+    expect(screen.queryByText('运行环境')).not.toBeInTheDocument();
+    expect(screen.queryByText('45.0.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('win32 · x64')).not.toBeInTheDocument();
   });
 
-  it('应用信息读取失败时显示可读错误', async () => {
+  it('应用信息读取失败时不阻塞工作台', async () => {
     Object.defineProperty(window, 'desktopAPI', {
       configurable: true,
       value: {
@@ -552,8 +553,10 @@ describe('阶段 1 / 工作台组件', () => {
     appLogger.info('STEP 让 getAppInfo 失败并渲染');
     render(<App />);
 
-    appLogger.info('STEP 断言错误信息出现在界面上');
-    expect(await screen.findByText(/IPC unavailable/)).toBeInTheDocument();
+    appLogger.info('STEP 断言工作台仍可用，且不泄露内部错误面板');
+    expect(screen.getByText('还没有导入视频')).toBeInTheDocument();
+    expect(screen.queryByText('运行环境')).not.toBeInTheDocument();
+    expect(screen.queryByText(/IPC unavailable/)).not.toBeInTheDocument();
   });
 });
 

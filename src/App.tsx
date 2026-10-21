@@ -6,11 +6,11 @@ import type {
   OutputFormat,
   QualityPresetId,
 } from '../shared/conversion';
-import type { MediaItem } from '../shared/media';
+import type { FfmpegStatus, MediaItem } from '../shared/media';
 import { AppShell } from './components/AppShell';
 import { ConversionSettings } from './components/ConversionSettings';
 import { EmptyState } from './components/EmptyState';
-import { EnvironmentPanel } from './components/EnvironmentPanel';
+import { FfmpegErrorBanner } from './components/FfmpegErrorBanner';
 import { JobQueue } from './components/JobQueue';
 import { MediaList } from './components/MediaList';
 import type { AppInfoState, FfmpegState } from './types/ui';
@@ -73,17 +73,9 @@ export default function App() {
     api
       .getFfmpegStatus()
       .then((status) => {
-        if (!active) {
-          return;
+        if (active) {
+          setFfmpeg(toFfmpegState(status));
         }
-        setFfmpeg(
-          status.available
-            ? { status: 'ready', info: status }
-            : {
-                status: 'error',
-                message: status.error ?? 'FFmpeg 未就绪',
-              },
-        );
       })
       .catch((error: unknown) => {
         if (active) {
@@ -107,6 +99,26 @@ export default function App() {
         setJobs((current) => upsertConversionJob(current, update.job));
       }
     });
+  }, []);
+
+  const handleRetryFfmpeg = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api) {
+      setFfmpeg({ status: 'error', message: '桌面桥接未加载' });
+      return;
+    }
+
+    setFfmpeg({ status: 'loading' });
+    try {
+      const status = await api.getFfmpegStatus();
+      if (mountedRef.current) {
+        setFfmpeg(toFfmpegState(status));
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setFfmpeg({ status: 'error', message: toUserMessage(error) });
+      }
+    }
   }, []);
 
   const canImport = ffmpeg.status === 'ready' && !importing;
@@ -417,6 +429,7 @@ export default function App() {
     <AppShell
       version={appInfo.status === 'ready' ? appInfo.info.version : undefined}
       ffmpeg={ffmpeg}
+      onOpenLogDirectory={handleOpenLogDirectory}
     >
       <div
         data-testid="workspace-dropzone"
@@ -438,6 +451,14 @@ export default function App() {
         ) : null}
 
         <div className="min-w-0">
+          {ffmpeg.status === 'error' ? (
+            <FfmpegErrorBanner
+              message={ffmpeg.message}
+              onRetry={handleRetryFfmpeg}
+              onOpenLogDirectory={handleOpenLogDirectory}
+            />
+          ) : null}
+
           {importError ? (
             <div
               role="alert"
@@ -486,11 +507,6 @@ export default function App() {
             onOpenOutput={handleOpenOutputFile}
             onOpenOutputDirectory={handleShowOutputInFolder}
             onCopyError={handleCopyError}
-            onOpenLogDirectory={handleOpenLogDirectory}
-          />
-          <EnvironmentPanel
-            state={appInfo}
-            ffmpeg={ffmpeg}
             onOpenLogDirectory={handleOpenLogDirectory}
           />
         </aside>
@@ -546,6 +562,15 @@ export function mergeStartedJobs(
   }
 
   return next;
+}
+
+function toFfmpegState(status: FfmpegStatus): FfmpegState {
+  return status.available
+    ? { status: 'ready', info: status }
+    : {
+        status: 'error',
+        message: status.error ?? '视频引擎未就绪',
+      };
 }
 
 function toUserMessage(error: unknown): string {

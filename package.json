@@ -16,8 +16,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist:dir": "npm run build && electron-builder --win --dir",
-    "dist:win": "npm run build && electron-builder --win"
+    "prepare:ffmpeg": "node scripts/prepare-ffmpeg.mjs",
+    "dist:dir": "npm run prepare:ffmpeg && npm run build && electron-builder --win --dir",
+    "dist:win": "npm run prepare:ffmpeg && npm run build && electron-builder --win",
+    "e2e:packaged": "node scripts/e2e-packaged.mjs"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
@@ -53,6 +55,43 @@
       "package.json",
       "!**/*.map"
     ],
+    "extraResources": [
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FrameForge"
+    },
     "asar": true
   }
 }

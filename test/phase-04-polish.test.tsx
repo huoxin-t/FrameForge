@@ -557,7 +557,7 @@ describe('阶段 4 / 体验 UI', () => {
     expect(await actions.findByText('已复制')).toBeInTheDocument();
   });
 
-  it('环境面板提供打开日志目录的真实入口', async () => {
+  it('底栏提供打开日志目录的真实入口', async () => {
     logger.info('STEP 点击打开日志目录');
 
     const openLogDirectory = vi.fn().mockResolvedValue(undefined);

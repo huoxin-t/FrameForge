@@ -2,7 +2,7 @@
 
 > 记录时间：2026-10-21
 >
-> 当前状态：阶段 4 已完成；本计划的范围已由开发者确认，**尚未开始实施**。
+> 当前状态：阶段 4 已完成；**M0 / M1 已完成**，Windows 安装包已内置 FFmpeg 并通过无 PATH 真实转换；M2 尚未开始。
 >
 > 文档关系：`docs/PROJECT_SPEC.md` 是需求底线；本文件定义阶段 4 之后的执行优先级、顺序和验收标准，不替代原始规格。
 
@@ -116,7 +116,7 @@ flowchart TD
 
 ## 4. 各里程碑
 
-### M0：契约与范围冻结
+### M0：契约与范围冻结（已完成）
 
 **目标：** 在写业务代码前，把数据模型、资源布局和验收标准定下来。
 
@@ -146,7 +146,7 @@ flowchart TD
 
 ---
 
-### M1：最小可交付基线（P0 核心）
+### M1：最小可交付基线（P0 核心，已完成）
 
 **目标：** 在增强功能之前，先证明“这个应用可以交给别人用”。
 
@@ -186,6 +186,16 @@ flowchart TD
 - 有一个可回滚的 Git 提交（需开发者确认）。
 
 **注意：** 这一步不追求最终视觉，也不做 WebM/MP3；先把交付链打通。
+
+**M1 实际结果（2026-10-21）：**
+
+- 随包 `ffmpeg 8.0.1-full_build-www.gyan.dev`（Windows x64 shared build），连同全部 DLL、LICENSE、README 和 manifest 一并复制；
+- `resources/ffmpeg/<platform>-<arch>/` 优先，旧平铺目录兼容，系统 PATH 最后；
+- `npm run dist:win` 产出 NSIS 安装包和完整目录 zip，使用自定义图标；
+- 静默安装到新目录后，移除 `PATH`、`FRAMEFORGE_FFMPEG_DIR`，真实拖拽导入中文/空格路径视频并完成 MP4 转换；\n- 完整目录 zip 解压后通过同一套无 PATH E2E；静默卸载退出码 0，安装目录被清理；
+- 状态返回 `source: "bundled"`，输出经随包 `ffprobe` 验证为 H.264 640×360；
+- 主界面环境面板已移除，保留 FFmpeg 缺失错误、重新检测和日志入口；
+- 测试从 87 增至 93，全部通过；证据见 `docs/TEST_PLAN.md`、`test-results/phase5-*`。
 
 ---
 
@@ -454,11 +464,11 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 |---|---|---|
 | 阶段 4 功能 UX | 已完成 | `docs/AI_DEVELOPMENT_LOG.md`、87/87 测试、打包 E2E |
 | P0/P1 范围确认 | 已完成（文档） | 本文件 |
-| P0-1 FFmpeg 随包 | 未开始 | — |
-| P0-2 安装包/便携包 | 未开始 | — |
-| P0-3 干净机器 E2E | 未开始 | — |
-| P0-4 移除环境面板 | 未开始 | — |
-| P0-5 文档/GitHub | 未开始 | — |
+| P0-1 FFmpeg 随包 | 已完成 | `resources/ffmpeg/win32-x64/`、`docs/FFMPEG.md`、无 PATH E2E `source: bundled` |
+| P0-2 安装包/便携包 | 已完成（M1 基线） | `release/FrameForge Setup 0.1.0.exe`、`release/FrameForge-0.1.0-win.zip`、自定义图标、zip 解压 E2E |
+| P0-3 干净机器 E2E | 部分完成 | 新目录安装 + 移除 PATH + 真实转换 + zip + 静默卸载通过；独立干净 VM 待 M6 |
+| P0-4 移除环境面板 | 已完成 | 主界面无环境面板；FFmpeg 错误态、重新检测、日志入口已测试 |
+| P0-5 文档/GitHub | 进行中 | `README.md`、`docs/TEST_PLAN.md`、`THIRD_PARTY_NOTICES.md` 已建立；Release 待 M6 |
 | P1-0 格式能力层 | 未开始 | — |
 | P1-1 WebM | 未开始 | — |
 | P1-2 MP3 | 未开始 | — |
@@ -467,18 +477,18 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 | P1-5 完成提示音 | 未开始（可选） | — |
 | P1-6 设置持久化 | 未开始（可选） | — |
 | 视觉方向 | 未开始 | — |
-| Git 基线提交 | 已完成 | `87d5395`，已推送到 `origin/main` |
+| Git 基线提交 | 已完成 | `87d5395` + `1f74c6d`，已推送到 `origin/main` |
 
-> 2026-10-21 已建立首个基线提交并推送；后续按里程碑提交，最终 release 前再做清理和 tag。
+> 2026-10-21 已建立首个基线提交并推送；M1 完成后按里程碑提交，最终 release 前再做清理和 tag。
 
 ---
 
 ## 8. 下一步
 
-1. 开发者确认本计划的顺序和 P1 范围；
-2. 从 **M0/M1** 开始，不先做 WebM/MP3 或视觉；
-3. M1 通过后，再进入 M2；
-4. 每个里程碑结束更新开发日志和状态板；
+1. M1 已完成，进入 **M2：格式能力层 + WebM/MP3**；
+2. M2 先做真实 `ffmpeg -encoders` 能力探测，再改 UI，避免假支持；
+3. 每个里程碑结束更新开发日志、测试计划、README 和状态板；
+4. M6 再做最终安装包、独立干净 VM、卸载、GitHub Release；
 5. 任何新增需求先判断：它是 P0、P1，还是应该放到 P2。
 
 **关键判断：** 如果时间不够，优先保证 P0 全绿；P1 只做 WebM/MP3、高级设置/命令预览、动态 ETA 三项高信号能力。完成提示音和持久化可以砍。

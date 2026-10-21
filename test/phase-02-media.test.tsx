@@ -530,7 +530,7 @@ describe('阶段 2 / FFmpeg 路径与状态', () => {
     const missingStatus = await missingService.getStatus();
 
     expect(missingStatus.available).toBe(false);
-    expect(missingStatus.error).toMatch(/未找到 FFmpeg/);
+    expect(missingStatus.error).toMatch(/未找到.*FFmpeg/);
     expect(missingStatus.ffmpegPath).toBeNull();
 
     logger.info('STEP 模拟版本检查进程失败');
@@ -854,7 +854,7 @@ const unavailableStatus: FfmpegStatus = {
   version: null,
   ffprobeVersion: null,
   source: null,
-  error: '未找到 FFmpeg，请安装并加入 PATH，或放到 resources/ffmpeg。',
+  error: '未找到内置 FFmpeg。请重新安装 FrameForge，或打开日志目录查看详情。',
 };
 
 const appInfo: AppInfo = {
@@ -1043,7 +1043,7 @@ describe('阶段 2 / 导入 UI', () => {
 
     logger.info('STEP 等待 FFmpeg 未就绪状态');
     expect(await screen.findByText('FFmpeg 未就绪')).toBeInTheDocument();
-    expect(screen.getByText(/未找到 FFmpeg/)).toBeInTheDocument();
+    expect(screen.getByText(/未找到.*FFmpeg/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /导入视频/ })).toBeDisabled();
   });
 });
