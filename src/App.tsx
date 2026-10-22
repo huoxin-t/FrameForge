@@ -11,16 +11,19 @@ import {
   type OutputFormat,
   type QualityPresetId,
 } from '../shared/conversion';
-import {
-  buildConversionArgs,
-  formatCommandForDisplay,
-} from '../shared/conversion-args';
+import { buildConversionArgs, formatCommandForDisplay } from '../shared/conversion-args';
 import type { ConversionCapabilities } from '../shared/capabilities';
+import {
+  mergeHistoryEntries,
+  type ConversionHistoryEntry,
+} from '../shared/history';
 import type { FfmpegStatus, MediaItem } from '../shared/media';
+import { getParentDirectory } from '../shared/path';
 import { AppShell } from './components/AppShell';
 import { ConversionSettings } from './components/ConversionSettings';
 import { EmptyState } from './components/EmptyState';
 import { FfmpegErrorBanner } from './components/FfmpegErrorBanner';
+import { HistoryCard } from './components/HistoryCard';
 import { JobQueue } from './components/JobQueue';
 import { MediaList } from './components/MediaList';
 import type { AppInfoState, FfmpegState } from './types/ui';
@@ -45,6 +48,9 @@ export default function App() {
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [starting, setStarting] = useState(false);
   const [conversionError, setConversionError] = useState<string | null>(null);
+  const [history, setHistory] = useState<ConversionHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const mountedRef = useRef(true);
   const dragDepthRef = useRef(0);
@@ -204,6 +210,58 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api) {
+      setHistoryLoading(false);
+      setHistoryError('桌面桥接未加载');
+      return;
+    }
+
+    let active = true;
+    setHistoryLoading(true);
+    api
+      .getConversionHistory()
+      .then((entries) => {
+        if (active && mountedRef.current) {
+          setHistory((current) =>
+            entries.reduce(
+              (merged, entry) => mergeHistoryEntries(merged, entry),
+              current,
+            ),
+          );
+          setHistoryError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active && mountedRef.current) {
+          setHistoryError(toUserMessage(error));
+        }
+      })
+      .finally(() => {
+        if (active && mountedRef.current) {
+          setHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api || typeof api.onHistoryUpdated !== 'function') {
+      return;
+    }
+
+    return api.onHistoryUpdated((entry) => {
+      if (mountedRef.current) {
+        setHistory((current) => mergeHistoryEntries(current, entry));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     if (!capabilities) {
       return;
     }
@@ -245,6 +303,17 @@ export default function App() {
   const applyImportedItems = useCallback((incoming: MediaItem[]) => {
     if (incoming.length > 0) {
       setItems((current) => mergeMediaItems(current, incoming));
+
+      // 只有用户尚未选择目录时才跟随首个源文件；手动选择后不再覆盖。
+      const firstValid = incoming.find(
+        (item) => item.metadata !== null && item.error === null,
+      );
+      const defaultDirectory = firstValid
+        ? getParentDirectory(firstValid.path)
+        : null;
+      if (defaultDirectory) {
+        setOutputDirectory((current) => current ?? defaultDirectory);
+      }
     }
   }, []);
 
@@ -539,6 +608,92 @@ export default function App() {
     }
   }, []);
 
+  const handleClearHistory = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api) {
+      return;
+    }
+
+    setHistoryError(null);
+    try {
+      await api.clearConversionHistory();
+      if (mountedRef.current) {
+        setHistory([]);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setHistoryError(toUserMessage(error));
+      }
+      throw error;
+    }
+  }, []);
+
+  const handleOpenHistoryOutput = useCallback(
+    async (entry: ConversionHistoryEntry) => {
+      const api = window.desktopAPI;
+      if (!api) {
+        return;
+      }
+
+      setHistoryError(null);
+      try {
+        await api.openHistoryOutput(entry.id);
+      } catch (error) {
+        if (mountedRef.current) {
+          setHistoryError(toUserMessage(error));
+        }
+      }
+    },
+    [],
+  );
+
+  const handleShowHistoryOutputInFolder = useCallback(
+    async (entry: ConversionHistoryEntry) => {
+      const api = window.desktopAPI;
+      if (!api) {
+        return;
+      }
+
+      setHistoryError(null);
+      try {
+        await api.showHistoryOutputInFolder(entry.id);
+      } catch (error) {
+        if (mountedRef.current) {
+          setHistoryError(toUserMessage(error));
+        }
+      }
+    },
+    [],
+  );
+
+  const handleCopyHistoryError = useCallback(
+    async (entry: ConversionHistoryEntry) => {
+      const api = window.desktopAPI;
+      if (!api) {
+        throw new Error('桌面桥接未加载');
+      }
+
+      const sections = [
+        `文件：${entry.fileName}`,
+        `错误：${entry.error ?? '未知错误'}`,
+      ];
+      if (entry.logExcerpt) {
+        sections.push('', 'FFmpeg 日志：', entry.logExcerpt);
+      }
+
+      setHistoryError(null);
+      try {
+        await api.copyText(sections.join('\n'));
+      } catch (error) {
+        if (mountedRef.current) {
+          setHistoryError(toUserMessage(error));
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
   const handleOpenLogDirectory = useCallback(async () => {
     const api = window.desktopAPI;
     if (!api) {
@@ -671,6 +826,18 @@ export default function App() {
             onOpenOutputDirectory={handleShowOutputInFolder}
             onCopyError={handleCopyError}
             onOpenLogDirectory={handleOpenLogDirectory}
+          />
+
+          <HistoryCard
+            entries={history}
+            loading={historyLoading}
+            error={historyError}
+            onOpenOutput={(entry) => void handleOpenHistoryOutput(entry)}
+            onOpenOutputDirectory={(entry) =>
+              void handleShowHistoryOutputInFolder(entry)
+            }
+            onCopyError={handleCopyHistoryError}
+            onClear={handleClearHistory}
           />
         </aside>
       </div>

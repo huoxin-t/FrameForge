@@ -7,10 +7,11 @@ import {
   type BrowserWindow,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { VIDEO_EXTENSIONS } from '../../../shared/media';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { ConversionUpdate } from '../../../shared/conversion';
+import type { ConversionHistoryEntry } from '../../../shared/history';
 import { buildAppInfo } from '../services/app-info';
 import { FfmpegCapabilityService } from '../services/ffmpeg/capabilities';
 import { FfmpegService } from '../services/ffmpeg/status';
@@ -30,8 +31,14 @@ import {
 } from '../services/conversion/validation';
 import {
   openCompletedOutput,
+  OutputActionError,
   revealCompletedOutput,
 } from '../services/conversion/output-actions';
+import {
+  createConversionHistoryStore,
+  parseHistoryId,
+  type ConversionHistoryStore,
+} from '../services/history/store';
 import { parseVideoPaths } from '../services/media/import-validation';
 import { createLogger, getLogFilePath } from '../services/logger';
 import { openExistingDirectory } from '../services/system/open-path';
@@ -45,6 +52,7 @@ export interface IpcServices {
   capabilities?: FfmpegCapabilityService;
   media: MediaService;
   conversion?: ConversionQueue;
+  history?: ConversionHistoryStore;
 }
 
 export interface RegisteredIpcHandlers {
@@ -82,11 +90,42 @@ export function registerIpcHandlers(
     mainWindow.webContents.send(IPC_CHANNELS.conversionUpdate, update);
   };
 
+  const sendHistoryUpdated = (entry: ConversionHistoryEntry) => {
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    mainWindow.webContents.send(IPC_CHANNELS.historyUpdated, entry);
+  };
+
+  const historyStore =
+    services.history ??
+    createConversionHistoryStore({
+      filePath: join(app.getPath('userData'), 'conversion-history.json'),
+      pathExists,
+    });
+
   const conversionQueue =
     services.conversion ??
     createConversionQueue({
       ffmpeg: ffmpegService,
       onUpdate: sendConversionUpdate,
+      onTerminal: (job, settings) => {
+        void historyStore
+          .record(job, settings)
+          .then((entry) => {
+            if (entry) {
+              sendHistoryUpdated(entry);
+            }
+          })
+          .catch((error: unknown) => {
+            logger.warn('Failed to save conversion history', {
+              jobId: job.id,
+              error,
+            });
+          });
+      },
     });
 
   const assertTrusted = (event: IpcMainInvokeEvent, channel: string) => {
@@ -221,6 +260,18 @@ export function registerIpcHandlers(
     conversionQueue.cancel(parsed);
   });
 
+  ipcMain.handle(IPC_CHANNELS.getConversionHistory, async (event) => {
+    assertTrusted(event, IPC_CHANNELS.getConversionHistory);
+    logger.info('Handled history list request');
+    return historyStore.list();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clearConversionHistory, async (event) => {
+    assertTrusted(event, IPC_CHANNELS.clearConversionHistory);
+    logger.info('Handled history clear request');
+    await historyStore.clear();
+  });
+
   const outputActionDependencies = {
     openPath: (path: string) => shell.openPath(path),
     showItemInFolder: (path: string) => shell.showItemInFolder(path),
@@ -236,6 +287,36 @@ export function registerIpcHandlers(
       outputActionDependencies,
     );
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.openHistoryOutput,
+    async (event, historyId: unknown) => {
+      assertTrusted(event, IPC_CHANNELS.openHistoryOutput);
+      const parsed = parseHistoryId(historyId);
+      const entry = await historyStore.get(parsed);
+      if (!entry) {
+        throw new OutputActionError('历史记录不存在');
+      }
+      logger.info('Opening history output file', { historyId: parsed });
+      await openCompletedOutput(entry, outputActionDependencies);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.showHistoryOutputInFolder,
+    async (event, historyId: unknown) => {
+      assertTrusted(event, IPC_CHANNELS.showHistoryOutputInFolder);
+      const parsed = parseHistoryId(historyId);
+      const entry = await historyStore.get(parsed);
+      if (!entry) {
+        throw new OutputActionError('历史记录不存在');
+      }
+      logger.info('Revealing history output in folder', {
+        historyId: parsed,
+      });
+      await revealCompletedOutput(entry, outputActionDependencies);
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.showOutputInFolder,

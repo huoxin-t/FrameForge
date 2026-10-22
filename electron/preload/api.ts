@@ -5,6 +5,7 @@ import {
 } from '../../shared/ipc';
 import type { ConversionJob, ConversionUpdate, StartConversionsRequest } from '../../shared/conversion';
 import type { ConversionCapabilities } from '../../shared/capabilities';
+import type { ConversionHistoryEntry } from '../../shared/history';
 import type { FfmpegStatus, MediaItem } from '../../shared/media';
 
 export type Invoke = (channel: string, payload?: unknown) => Promise<unknown>;
@@ -42,6 +43,20 @@ export function createDesktopApi(
       subscribe(IPC_CHANNELS.conversionUpdate, (payload) => {
         callback(payload as ConversionUpdate);
       }),
+    getConversionHistory: () =>
+      invoke(IPC_CHANNELS.getConversionHistory) as Promise<
+        ConversionHistoryEntry[]
+      >,
+    clearConversionHistory: () =>
+      invoke(IPC_CHANNELS.clearConversionHistory) as Promise<void>,
+    onHistoryUpdated: (callback: (entry: ConversionHistoryEntry) => void) =>
+      subscribe(IPC_CHANNELS.historyUpdated, (payload) => {
+        callback(payload as ConversionHistoryEntry);
+      }),
+    openHistoryOutput: (historyId: string) =>
+      invoke(IPC_CHANNELS.openHistoryOutput, historyId) as Promise<void>,
+    showHistoryOutputInFolder: (historyId: string) =>
+      invoke(IPC_CHANNELS.showHistoryOutputInFolder, historyId) as Promise<void>,
     openOutputFile: (jobId: string) =>
       invoke(IPC_CHANNELS.openOutputFile, jobId) as Promise<void>,
     showOutputInFolder: (jobId: string) =>

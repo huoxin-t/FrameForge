@@ -20,6 +20,7 @@ import {
   isResolutionPresetId,
 } from '../../../../shared/conversion';
 import { createLogger } from '../logger';
+import { isConversionHistoryStatus } from '../../../../shared/history';
 import type { FfmpegService } from '../ffmpeg/status';
 import { probeMedia, validateVideoPath } from '../media/probe';
 import {
@@ -69,6 +70,11 @@ export interface ConversionQueueDependencies {
   now?: () => number;
   generateId?: () => string;
   onUpdate?: (update: { job: ConversionJob }) => void;
+  /** 仅在任务首次进入 completed/failed/canceled 时调用。 */
+  onTerminal?: (
+    job: ConversionJob,
+    settings: ConversionSettings | null,
+  ) => void;
 }
 
 export class ConversionQueueError extends Error {
@@ -87,6 +93,7 @@ export class ConversionQueue {
   private readonly dependencies: ConversionQueueDependencies;
   private readonly jobs: ConversionJob[] = [];
   private readonly jobSettings = new Map<string, ConversionSettings>();
+  private readonly terminalNotified = new Set<string>();
   private readonly reservedOutputPaths = new Set<string>();
   private readonly idleWaiters: Array<() => void> = [];
   private active: ActiveJob | null = null;
@@ -153,6 +160,7 @@ export class ConversionQueue {
           this.recordFailure(
             sourcePath,
             sourceValidation.error ?? '源文件无效',
+            normalizedSettings,
           ),
         );
         continue;
@@ -166,6 +174,7 @@ export class ConversionQueue {
           this.recordFailure(
             sourceValidation.path,
             '该视频没有音轨，无法导出 MP3',
+            normalizedSettings,
           ),
         );
         continue;
@@ -216,6 +225,7 @@ export class ConversionQueue {
     }
 
     if (job.status === 'queued') {
+      const settings = this.jobSettings.get(job.id) ?? null;
       job.status = 'canceled';
       job.finishedAt = this.now();
       job.elapsedMs = 0;
@@ -224,6 +234,7 @@ export class ConversionQueue {
       this.jobSettings.delete(job.id);
       logger.info('Queued conversion canceled', { jobId });
       this.emit(job);
+      this.finishTerminal(job, settings);
       this.notifyIdle();
       return;
     }
@@ -351,8 +362,10 @@ export class ConversionQueue {
           }
         } finally {
           this.active = null;
+          const settingsSnapshot = this.jobSettings.get(job.id) ?? null;
           this.jobSettings.delete(job.id);
           this.emit(job);
+          this.finishTerminal(job, settingsSnapshot);
         }
       }
     } finally {
@@ -366,7 +379,11 @@ export class ConversionQueue {
     }
   }
 
-  private recordFailure(sourcePath: string, error: string): ConversionJob {
+  private recordFailure(
+    sourcePath: string,
+    error: string,
+    settings: ConversionSettings,
+  ): ConversionJob {
     const failed = this.createJob({
       sourcePath,
       fileName: basename(sourcePath) || sourcePath,
@@ -377,6 +394,7 @@ export class ConversionQueue {
     });
     this.jobs.push(failed);
     this.emit(failed);
+    this.finishTerminal(failed, settings);
     return { ...failed };
   }
 
@@ -406,6 +424,7 @@ export class ConversionQueue {
   }
 
   private markFailed(job: ConversionJob, message: string): void {
+    const settings = this.jobSettings.get(job.id) ?? null;
     job.status = 'failed';
     job.error = message;
     job.finishedAt = this.now();
@@ -414,6 +433,7 @@ export class ConversionQueue {
     job.etaSeconds = null;
     this.jobSettings.delete(job.id);
     this.emit(job);
+    this.finishTerminal(job, settings);
   }
 
   private elapsedSince(job: ConversionJob): number | null {
@@ -436,6 +456,22 @@ export class ConversionQueue {
       this.dependencies.onUpdate?.({ job: { ...job } });
     } catch (error) {
       logger.warn('Conversion update listener failed', { error });
+    }
+  }
+
+  private finishTerminal(
+    job: ConversionJob,
+    settings: ConversionSettings | null,
+  ): void {
+    if (!isConversionHistoryStatus(job.status) || this.terminalNotified.has(job.id)) {
+      return;
+    }
+
+    this.terminalNotified.add(job.id);
+    try {
+      this.dependencies.onTerminal?.({ ...job }, settings);
+    } catch (error) {
+      logger.warn('Conversion terminal listener failed', { error });
     }
   }
 
@@ -496,6 +532,10 @@ export class ConversionQueue {
 export interface CreateConversionQueueOptions {
   ffmpeg: Pick<FfmpegService, 'getStatus'>;
   onUpdate?: (update: { job: ConversionJob }) => void;
+  onTerminal?: (
+    job: ConversionJob,
+    settings: ConversionSettings | null,
+  ) => void;
 }
 
 /** 用真实 FFmpeg 和 ffprobe 创建转换队列。 */
@@ -543,6 +583,7 @@ export function createConversionQueue(
     findOutputPath: findUniqueOutputPath,
     pathExists,
     onUpdate: options.onUpdate,
+    onTerminal: options.onTerminal,
   });
 }
 

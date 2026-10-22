@@ -11,7 +11,7 @@
  * 运行：node scripts/e2e-packaged.mjs
  */
 import { spawn } from 'node:child_process';
-import { access, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -64,6 +64,13 @@ const advancedScreenshotPath = join(
   'evidence',
   'phase7-advanced.png',
 );
+const historyScreenshotPath = join(
+  root,
+  'docs',
+  'evidence',
+  'phase8-history.png',
+);
+const historyFilePath = join(userDataDirectory, 'conversion-history.json');
 const port = 9335;
 
 class Cdp {
@@ -123,34 +130,15 @@ async function main() {
   await ensureAdvancedInputVideo();
 
   const appEnvironment = createIsolatedEnvironment();
-  const child = spawn(
-    exePath,
-    [
-      `--remote-debugging-port=${port}`,
-      '--remote-allow-origins=*',
-      `--user-data-dir=${userDataDirectory}`,
-    ],
-    { env: appEnvironment, stdio: 'ignore' },
-  );
-
-  let cdp;
+  let firstApp = null;
+  let secondApp = null;
+  let cdp = null;
+  let secondCdp = null;
 
   try {
-    const target = await waitForTarget(port);
-    cdp = new Cdp(target.webSocketDebuggerUrl);
-    await cdp.open();
-    await cdp.send('Runtime.enable');
-    await cdp.send('Page.enable');
-
-    await waitFor(
-      () =>
-        evaluate(
-          cdp,
-          `typeof window.desktopAPI === 'object' && document.body.innerText.includes('FFmpeg 已就绪')`,
-        ),
-      '应用与内置 FFmpeg 状态',
-      30_000,
-    );
+    firstApp = await launchPackagedApp(appEnvironment);
+    cdp = firstApp.cdp;
+    await waitForAppReady(cdp);
 
     const ffmpegStatus = await evaluate(
       cdp,
@@ -178,6 +166,33 @@ async function main() {
       `window.desktopAPI.importVideos([${JSON.stringify(inputPath)}])`,
     );
     const item = assertImportedItem(imported);
+
+    let defaultOutputDirectory = null;
+    if (importMode === 'drag-drop') {
+      await waitFor(
+        () =>
+          evaluate(
+            cdp,
+            `document.querySelector('[data-testid="output-directory"]')?.textContent?.trim() === ${JSON.stringify(
+              dirname(inputPath),
+            )}`,
+          ),
+        '首个源文件目录自动成为输出目录',
+        10_000,
+      );
+      defaultOutputDirectory = await evaluate(
+        cdp,
+        `document.querySelector('[data-testid="output-directory"]')?.textContent?.trim() ?? null`,
+      );
+    }
+
+    const initialHistory = await evaluate(
+      cdp,
+      'window.desktopAPI.getConversionHistory()',
+    );
+    if (!Array.isArray(initialHistory) || initialHistory.length !== 0) {
+      throw new Error(`全新 userData 不应已有历史：${JSON.stringify(initialHistory)}`);
+    }
 
     const capabilities = await evaluate(
       cdp,
@@ -247,6 +262,18 @@ async function main() {
       expectedCompleted: 4,
     });
 
+    const historyEntries = await waitForHistoryCount(cdp, 4);
+    assertHistoryEntries(historyEntries, ['mp3', 'mp4', 'mp4', 'webm']);
+    await waitFor(
+      () =>
+        evaluate(
+          cdp,
+          `document.querySelector('section[aria-label="转换历史"]')?.innerText.includes('已完成') === true`,
+        ),
+      '右侧栏历史卡片显示已完成记录',
+      10_000,
+    );
+
     await selectFormat(cdp, 'webm');
     await waitFor(
       () => evaluate(cdp, `document.body.innerText.includes('VP9 + Opus')`),
@@ -270,11 +297,13 @@ async function main() {
       () =>
         evaluate(
           cdp,
-          `document.body.innerText.includes('命令预览（只读）') && document.body.innerText.includes('-progress pipe:1')`,
+          `document.body.innerText.includes('FFmpeg 命令预览') && document.body.innerText.includes('-progress pipe:1')`,
         ),
       '高级设置命令预览',
       10_000,
     );
+    await toggleCommandPreview(cdp, false);
+    await toggleCommandPreview(cdp, true);
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 1344,
       height: 1100,
@@ -286,8 +315,80 @@ async function main() {
     await captureFullPage(cdp, advancedScreenshotPath);
     await cdp.send('Emulation.clearDeviceMetricsOverride');
 
-    await evaluate(cdp, 'window.close()');
-    await waitForExit(child, 5_000);
+    await closePackagedApp(firstApp);
+    firstApp = null;
+    cdp = null;
+
+    const persistedHistory = await readHistoryFile();
+    assertHistoryEntries(
+      persistedHistory.entries,
+      ['mp3', 'mp4', 'mp4', 'webm'],
+      { requireOutputExists: false },
+    );
+
+    secondApp = await launchPackagedApp(appEnvironment);
+    secondCdp = secondApp.cdp;
+    await waitForAppReady(secondCdp);
+    const reloadedHistory = await waitForHistoryCount(secondCdp, 4);
+    assertHistoryEntries(reloadedHistory, ['mp3', 'mp4', 'mp4', 'webm']);
+    await waitFor(
+      () =>
+        evaluate(
+          secondCdp,
+          `document.querySelector('section[aria-label="转换历史"]')?.innerText.includes('已完成') === true`,
+        ),
+      '重启后右侧栏历史卡片恢复记录',
+      10_000,
+    );
+
+    await secondCdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 1344,
+      height: 1200,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(300);
+    await scrollWorkspaceToTop(secondCdp);
+    await captureFullPage(secondCdp, historyScreenshotPath);
+    await secondCdp.send('Emulation.clearDeviceMetricsOverride');
+
+    await clearHistoryThroughUi(secondCdp);
+    await waitFor(
+      () =>
+        evaluate(
+          secondCdp,
+          `document.querySelector('section[aria-label="转换历史"]')?.innerText.includes('完成一次转换后，记录会出现在这里。') === true`,
+        ),
+      '清空历史后的空状态',
+      10_000,
+    );
+    const clearedHistory = await evaluate(
+      secondCdp,
+      'window.desktopAPI.getConversionHistory()',
+    );
+    if (!Array.isArray(clearedHistory) || clearedHistory.length !== 0) {
+      throw new Error(`清空历史失败：${JSON.stringify(clearedHistory)}`);
+    }
+    const clearedHistoryFile = await readHistoryFile();
+    if (
+      !Array.isArray(clearedHistoryFile.entries) ||
+      clearedHistoryFile.entries.length !== 0
+    ) {
+      throw new Error(
+        `历史文件清空失败：${JSON.stringify(clearedHistoryFile)}`,
+      );
+    }
+
+    const outputs = Object.values(conversions).map(
+      (conversion) => conversion.outputPath,
+    );
+    for (const outputPath of outputs) {
+      await assertExists(outputPath, '清空历史后保留的输出文件');
+    }
+
+    await closePackagedApp(secondApp);
+    secondApp = null;
+    secondCdp = null;
 
     console.log(
       JSON.stringify(
@@ -310,7 +411,18 @@ async function main() {
             durationMs: item.metadata.durationMs,
             thumbnailBytes: item.thumbnailDataUrl.length,
           },
+          defaultOutputDirectory,
           conversions,
+          history: {
+            initialCount: initialHistory.length,
+            count: historyEntries.length,
+            persistedPath: historyFilePath,
+            persistedCount: persistedHistory.entries.length,
+            reloadedCount: reloadedHistory.length,
+            clearedCount: clearedHistory.length,
+            outputsRetained: outputs.length,
+            screenshotPath: historyScreenshotPath,
+          },
           screenshotPath,
           mp3ScreenshotPath,
           advancedScreenshotPath,
@@ -320,11 +432,180 @@ async function main() {
       ),
     );
   } catch (error) {
-    child.kill();
+    firstApp?.child.kill();
+    secondApp?.child.kill();
     throw error;
   } finally {
-    cdp?.close();
+    firstApp?.cdp.close();
+    secondApp?.cdp.close();
   }
+}
+
+async function launchPackagedApp(environment) {
+  const child = spawn(
+    exePath,
+    [
+      `--remote-debugging-port=${port}`,
+      '--remote-allow-origins=*',
+      `--user-data-dir=${userDataDirectory}`,
+    ],
+    { env: environment, stdio: 'ignore' },
+  );
+
+  try {
+    const target = await waitForTarget(port);
+    const cdp = new Cdp(target.webSocketDebuggerUrl);
+    await cdp.open();
+    await cdp.send('Runtime.enable');
+    await cdp.send('Page.enable');
+    return { child, cdp };
+  } catch (error) {
+    child.kill();
+    throw error;
+  }
+}
+
+async function waitForAppReady(cdp) {
+  await waitFor(
+    () =>
+      evaluate(
+        cdp,
+        `typeof window.desktopAPI === 'object' && document.body.innerText.includes('FFmpeg 已就绪')`,
+      ),
+    '应用与内置 FFmpeg 状态',
+    30_000,
+  );
+}
+
+async function closePackagedApp(app) {
+  try {
+    await evaluate(app.cdp, 'window.close()');
+  } finally {
+    await waitForExit(app.child, 5_000);
+    app.cdp.close();
+  }
+}
+
+async function toggleCommandPreview(cdp, expanded) {
+  await evaluate(
+    cdp,
+    `(() => {
+      const button = [...document.querySelectorAll('button')].find((candidate) =>
+        candidate.textContent?.includes('FFmpeg 命令预览'),
+      );
+      if (!button) {
+        throw new Error('未找到 FFmpeg 命令预览开关');
+      }
+      if (button.getAttribute('aria-expanded') !== '${expanded}') {
+        button.click();
+      }
+      return true;
+    })()`,
+  );
+  await waitFor(
+    () =>
+      evaluate(
+        cdp,
+        `Boolean(document.querySelector('[data-testid="command-preview"]')) === ${expanded}`,
+      ),
+    expanded ? '展开 FFmpeg 命令预览' : '折叠 FFmpeg 命令预览',
+    10_000,
+  );
+}
+
+async function clearHistoryThroughUi(cdp) {
+  await evaluate(
+    cdp,
+    `(() => {
+      const section = document.querySelector('section[aria-label="转换历史"]');
+      if (!section) {
+        throw new Error('未找到转换历史卡片');
+      }
+      const button = [...section.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent?.trim() === '清空',
+      );
+      if (!button) {
+        throw new Error('未找到清空历史按钮');
+      }
+      button.click();
+      return true;
+    })()`,
+  );
+  await waitFor(
+    () =>
+      evaluate(
+        cdp,
+        `document.querySelector('section[aria-label="转换历史"]')?.innerText.includes('确认清空历史？') === true`,
+      ),
+    '清空历史二次确认',
+    10_000,
+  );
+  await evaluate(
+    cdp,
+    `(() => {
+      const section = document.querySelector('section[aria-label="转换历史"]');
+      const button = [...section.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent?.trim() === '确认清空',
+      );
+      if (!button) {
+        throw new Error('未找到确认清空按钮');
+      }
+      button.click();
+      return true;
+    })()`,
+  );
+}
+
+async function waitForHistoryCount(cdp, expectedCount) {
+  let entries = null;
+  await waitFor(
+    async () => {
+      entries = await evaluate(cdp, 'window.desktopAPI.getConversionHistory()');
+      return Array.isArray(entries) && entries.length === expectedCount;
+    },
+    `历史记录数量 ${expectedCount}`,
+    10_000,
+  );
+  return entries;
+}
+
+function assertHistoryEntries(entries, expectedFormats, options = {}) {
+  if (!Array.isArray(entries)) {
+    throw new Error(`历史记录不是数组：${JSON.stringify(entries)}`);
+  }
+  if (entries.length !== expectedFormats.length) {
+    throw new Error(`历史记录数量错误：${JSON.stringify(entries)}`);
+  }
+  const statuses = entries.map((entry) => entry.status);
+  if (statuses.some((status) => status !== 'completed')) {
+    throw new Error(`历史记录包含非完成终态：${JSON.stringify(entries)}`);
+  }
+  const formats = entries.map((entry) => entry.format).sort();
+  const expected = [...expectedFormats].sort();
+  if (JSON.stringify(formats) !== JSON.stringify(expected)) {
+    throw new Error(
+      `历史格式错误：${JSON.stringify(formats)}，期望 ${JSON.stringify(expected)}`,
+    );
+  }
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) {
+    throw new Error(`历史记录 id 重复：${JSON.stringify(entries)}`);
+  }
+  if (options.requireOutputExists !== false) {
+    const missing = entries.filter((entry) => entry.outputExists !== true);
+    if (missing.length > 0) {
+      throw new Error(`历史记录输出不存在：${JSON.stringify(missing)}`);
+    }
+  }
+}
+
+async function readHistoryFile() {
+  const raw = await readFile(historyFilePath, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
+    throw new Error(`历史文件结构错误：${raw}`);
+  }
+  return parsed;
 }
 
 async function prepareDirectories() {
@@ -336,6 +617,7 @@ async function prepareDirectories() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(mp3ScreenshotPath), { recursive: true });
   await mkdir(dirname(advancedScreenshotPath), { recursive: true });
+  await mkdir(dirname(historyScreenshotPath), { recursive: true });
 }
 
 async function ensureInputVideo() {

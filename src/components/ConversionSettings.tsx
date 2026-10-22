@@ -213,6 +213,7 @@ export function ConversionSettings({
               选择目录
             </button>
             <span
+              data-testid="output-directory"
               className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
                 outputDirectory ? 'text-slate-300' : 'text-slate-500'
               }`}
@@ -221,6 +222,9 @@ export function ConversionSettings({
               {outputDirectory ?? '未选择输出目录'}
             </span>
           </div>
+          <p className="mt-1.5 text-[10px] leading-5 text-slate-600">
+            首次导入后默认使用首个源文件所在文件夹，也可以手动选择其他目录。
+          </p>
         </div>
 
         {audioOnlyExcludedCount > 0 ? (

@@ -503,6 +503,11 @@ describe('阶段 1 / 工作台组件', () => {
         showOutputInFolder: vi.fn().mockResolvedValue(undefined),
         copyText: vi.fn().mockResolvedValue(undefined),
         openLogDirectory: vi.fn().mockResolvedValue(undefined),
+        getConversionHistory: vi.fn().mockResolvedValue([]),
+        clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+        onHistoryUpdated: vi.fn(() => () => undefined),
+        openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+        showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
       },
     });
   });
@@ -547,6 +552,11 @@ describe('阶段 1 / 工作台组件', () => {
         showOutputInFolder: vi.fn().mockResolvedValue(undefined),
         copyText: vi.fn().mockResolvedValue(undefined),
         openLogDirectory: vi.fn().mockResolvedValue(undefined),
+        getConversionHistory: vi.fn().mockResolvedValue([]),
+        clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+        onHistoryUpdated: vi.fn(() => () => undefined),
+        openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+        showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
       },
     });
 

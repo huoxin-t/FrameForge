@@ -29,7 +29,7 @@ import {
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import App from '../src/App';
 import { createTestLogger } from './helpers/test-logger';
@@ -862,17 +862,22 @@ describe('阶段 3 / 转换 preload 契约', () => {
     logger.info('STEP 检查 DesktopAPI 键');
     expect([...DESKTOP_API_KEYS].sort()).toEqual([
       'cancelConversion',
+      'clearConversionHistory',
       'copyText',
       'getAppInfo',
       'getConversionCapabilities',
+      'getConversionHistory',
       'getFfmpegStatus',
       'getPathForFile',
       'importVideos',
       'onConversionUpdate',
+      'onHistoryUpdated',
+      'openHistoryOutput',
       'openLogDirectory',
       'openOutputFile',
       'selectOutputDirectory',
       'selectVideos',
+      'showHistoryOutputInFolder',
       'showOutputInFolder',
       'startConversions',
     ]);
@@ -1010,6 +1015,11 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
     showOutputInFolder: vi.fn().mockResolvedValue(undefined),
     copyText: vi.fn().mockResolvedValue(undefined),
     openLogDirectory: vi.fn().mockResolvedValue(undefined),
+    getConversionHistory: vi.fn().mockResolvedValue([]),
+    clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+    onHistoryUpdated: vi.fn(() => () => undefined),
+    openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+    showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
     onConversionUpdate: vi.fn((listener: (update: ConversionUpdate) => void) => {
       updateListeners.push(listener);
       return () => {
@@ -1057,20 +1067,20 @@ describe('阶段 3 / 转换 UI', () => {
     stubDesktopApi();
   });
 
-  it('导入后显示格式、质量预设和输出目录；未选目录不能开始', async () => {
+  it('导入后默认输出到源文件目录，手动选择后使用手动目录', async () => {
     await renderAppWithImportedItem();
 
     logger.info('STEP 检查设置区和真实可用的控件');
     expect(screen.getByText('转换设置')).toBeInTheDocument();
     expect(screen.getByLabelText('输出格式')).toHaveValue('mp4');
     expect(screen.getByLabelText('质量预设')).toHaveValue('compatible');
-    expect(screen.getByText('未选择输出目录')).toBeInTheDocument();
+    expect(screen.getByText('C:\\媒体 样本')).toBeInTheDocument();
 
     const start = screen.getByRole('button', { name: '开始转换' });
-    expect(start).toBeDisabled();
+    expect(start).toBeEnabled();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
-    logger.info('STEP 选择输出目录后开始按钮才可用');
+    logger.info('STEP 手动选择输出目录后覆盖默认值');
     stubDesktopApi({
       selectVideos: vi.fn().mockResolvedValue([]),
       selectOutputDirectory: vi.fn().mockResolvedValue('C:\\输出 目录'),
@@ -1079,6 +1089,7 @@ describe('阶段 3 / 转换 UI', () => {
     await waitFor(() => {
       expect(screen.getByText('C:\\输出 目录')).toBeInTheDocument();
     });
+    expect(screen.queryByText('C:\\媒体 样本')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始转换' })).toBeEnabled();
   });
 
@@ -1161,7 +1172,8 @@ describe('阶段 3 / 转换 UI', () => {
         },
       });
     });
-    expect(screen.getByText('失败')).toBeInTheDocument();
+    const queue = within(screen.getByRole('region', { name: '任务队列' }));
+    expect(queue.getByText('失败')).toBeInTheDocument();
     expect(screen.getByText(/转换失败：编码器错误/)).toBeInTheDocument();
     expect(screen.getByText('查看详细日志')).toBeInTheDocument();
     expect(screen.getByText('Error while opening encoder')).toBeInTheDocument();
@@ -1179,6 +1191,7 @@ describe('阶段 3 / 转换 UI', () => {
     await screen.findByText('C:\\输出 目录');
     fireEvent.click(screen.getByRole('button', { name: '开始转换' }));
     await screen.findByText('排队中');
+    const queue = within(screen.getByRole('region', { name: '任务队列' }));
 
     logger.info('STEP 注入 running 更新后点击取消');
     await act(async () => {
@@ -1186,7 +1199,7 @@ describe('阶段 3 / 转换 UI', () => {
         job: { ...queuedJob, status: 'running', progress: 25 },
       });
     });
-    fireEvent.click(screen.getByRole('button', { name: /取消/ }));
+    fireEvent.click(queue.getByRole('button', { name: '取消' }));
 
     await waitFor(() => {
       expect(cancelConversion).toHaveBeenCalledWith(queuedJob.id);
@@ -1204,6 +1217,6 @@ describe('阶段 3 / 转换 UI', () => {
       });
     });
     expect(screen.getByText('已取消')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /取消/ })).not.toBeInTheDocument();
+    expect(queue.queryByRole('button', { name: '取消' })).not.toBeInTheDocument();
   });
 });

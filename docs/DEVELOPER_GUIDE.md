@@ -4,7 +4,7 @@
 >
 > 当前基线：**阶段 4（功能型产品体验）、M1（Windows 最小可交付基线）、M2（格式能力层 + WebM/MP3）和 M3（高级设置 + 命令预览 + 动态 ETA）已完成**。FFmpeg 已随安装包分发，安装版在移除系统 PATH 后仍能真实转换；WebM/MP3、高级设置和 ETA 已通过真实 FFmpeg、FFprobe、自动化测试和打包版 E2E。视觉方向还没有最终确定。
 >
-> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于 M4/M6 的计划会明确标注为“待完成”。M4/M5 等开发者验收 M2/M3 后再确定。
+> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于 M5/M6 的计划会明确标注为“待完成”。M5 视觉方向等开发者验收 M4 后再确定。
 
 ### 阅读地图
 
@@ -62,7 +62,7 @@ Electron 桌面壳
 | 会话总结与开发者决策记录 | `docs/AI_DEVELOPMENT_LOG.md` 记录每阶段决策、反馈、RED/GREEN；`docs/SESSION_SUMMARY.md` 已更新到 M2 | 已有总结；M6 更新最终版 |
 | 项目提交 GitHub | 已有基线提交 `87d5395`、`1f74c6d` 推送到 `origin/main`；M1 基线为 `0681c38`；M2 已本地提交，推送待网络恢复 | 进行中 |
 | 界面选型与“客户端”关联 | Electron 桌面窗口、原生文件/目录选择器、本地路径、真实子进程 | 客户端关联已成立；整体视觉方向待确认 |
-| 设计给人用、自己测试过 | 124 个自动化测试、真实 FFmpeg 集成、无 PATH 的目录版/安装版 E2E、截图和证据日志 | 核心功能和 Windows 打包版已验证；独立干净 VM 和卸载待 M6 |
+| 设计给人用、自己测试过 | 138 个自动化测试、真实 FFmpeg 集成、无 PATH 的目录版/安装版 E2E、截图和证据日志 | 核心功能和 Windows 打包版已验证；独立干净 VM 和卸载待 M6 |
 
 这张表很重要：它既说明项目做了什么，也说明现在还**不能**对外宣称什么。面试或答辩时，边界要讲清楚。
 
@@ -124,7 +124,7 @@ flowchart LR
 | 层 | 主要文件 | 可以做什么 | 不可以做什么 |
 |---|---|---|---|
 | Renderer | `src/App.tsx`、`src/components/*` | 维护 UI 状态、调用 `window.desktopAPI`、渲染界面 | 不能导入 `node:fs`、`node:child_process`、Electron 模块 |
-| Preload | `electron/preload/index.ts`、`api.ts` | 通过 `contextBridge` 暴露 14 个受控方法 | 不能暴露完整 `ipcRenderer`、`fs`、通用命令执行 |
+| Preload | `electron/preload/index.ts`、`api.ts` | 通过 `contextBridge` 暴露 19 个受控方法 | 不能暴露完整 `ipcRenderer`、`fs`、通用命令执行 |
 | Main | `electron/main/*`、`services/*` | 文件对话框、FFprobe/FFmpeg、队列、日志、系统 Shell | 不能把 DOM/React 逻辑塞进来 |
 | 外部进程 | `ffmpeg.exe`、`ffprobe.exe` | 探测、缩略图、转码 | 不通过 shell 解释参数 |
 
@@ -235,7 +235,7 @@ webPreferences: {
 
 ## 5. IPC：界面和主进程之间的唯一通道
 
-### 5.1 14 个受控方法
+### 5.1 19 个受控方法
 
 `shared/ipc.ts` 定义了 `DesktopAPI`。preload 只暴露这些方法：
 
@@ -253,13 +253,18 @@ webPreferences: {
 | `onConversionUpdate(callback)` | `conversion:update` | 订阅主进程推送的任务状态 |
 | `openOutputFile(jobId)` | `shell:open-output-file` | 打开已完成任务的输出文件 |
 | `showOutputInFolder(jobId)` | `shell:show-output-in-folder` | 在资源管理器中定位输出文件 |
+| `getConversionHistory()` | `history:list` | 读取主进程持久化的终端态历史 |
+| `clearConversionHistory()` | `history:clear` | 清空历史记录，不删除输出文件 |
+| `onHistoryUpdated(callback)` | `history:updated` | 订阅终态历史新增事件 |
+| `openHistoryOutput(historyId)` | `shell:open-history-output` | 用历史记录 ID 打开输出文件 |
+| `showHistoryOutputInFolder(historyId)` | `shell:show-history-output-in-folder` | 用历史记录 ID 定位输出文件 |
 | `copyText(text)` | `clipboard:write-text` | 受控写入剪贴板 |
 | `openLogDirectory()` | `shell:open-log-directory` | 打开主进程日志目录 |
 
 ### 5.2 `invoke` 与事件订阅
 
 - “请求—响应”型操作使用 `ipcRenderer.invoke` / `ipcMain.handle`，例如选择文件、开始转换。
-- “主进程主动推送”使用 `webContents.send`，renderer 通过 `onConversionUpdate` 订阅。
+- “主进程主动推送”使用 `webContents.send`，renderer 通过 `onConversionUpdate` 和 `onHistoryUpdated` 订阅。
 
 订阅函数必须返回取消订阅函数：
 
@@ -282,6 +287,7 @@ Renderer 不是可信边界。主进程在进入业务逻辑前会做多层校�
 | 拖拽导入 | 必须是数组、最多 100 个、绝对路径、已知视频扩展名、大小写不敏感去重 |
 | 转换请求 | 最多 100 个源文件、绝对路径、已知格式/预设、绝对输出目录 |
 | 取消/打开输出 | 任务 ID 必须是非空字符串且不超过 200 字符 |
+| 历史读取/清空/打开 | 历史 ID 必须是非空字符串且不超过 200 字符；打开时主进程重新读取历史并校验输出存在 |
 | 复制文本 | 非空、最多 20,000 字符 |
 | 打开输出 | 只接受任务 ID；主进程从队列取真实输出路径，再检查任务状态和文件存在性 |
 | 打开日志目录 | 路径由主进程根据日志文件位置决定，renderer 不能传入路径 |
@@ -772,6 +778,33 @@ while (true) {
 
 原因是主进程事件可能先于 `startConversions` 的 Promise 返回值到达。如果 UI 直接用返回值覆盖整个数组，就可能把已经变成 `running` 或 `completed` 的任务回退成 `queued`。
 
+### 8.7 转换历史为什么由主进程持久化
+
+历史不是 renderer 的 localStorage，也不是队列快照。链路是：
+
+```text
+队列进入完成/失败/取消终态
+  → onTerminal(job, settings)
+  → ConversionHistoryStore.record()
+  → 内存去重 + 排序 + 200 条上限
+  → 写 conversion-history.json.tmp
+  → rename 覆盖 conversion-history.json
+  → webContents.send('history:updated', entry)
+  → App 按 id 合并到右侧栏 HistoryCard
+```
+
+几个容易踩错的点：
+
+- **只记录终态**：`queued`/`running` 不写历史，否则重启后会恢复一批永远不会继续的任务。
+- **终态只通知一次**：队列有 `terminalNotified` 集合，取消和自然结束竞争时不会写两条记录。
+- **历史 ID 不是任务 ID**：历史记录生成独立 `history-*` ID。应用重启后旧队列任务 ID 失效，历史动作只接受历史 ID，避免误操作新会话里复用的 `job-1`。
+- **去重键是队列 job ID**：同一会话内即使重复收到终态通知，也不会写入第二条；不同会话的 job ID 可以复用，但历史 ID 不会复用。
+- **原子写**：先写临时文件再 rename；写到一半崩溃不会留下半个 JSON。读取时如果 JSON 损坏，会备份成 `.corrupt-*` 并返回空历史，不阻塞应用启动。
+- **清空不删文件**：`clear()` 只把 history 文件写成空数组；输出文件属于用户资产，历史删除不能级联删除。
+- **启动读取与推送可能并发**：`App` 不直接用 `getConversionHistory()` 结果覆盖当前列表，而是用 `mergeHistoryEntries()` 逐条合并，避免晚到的旧快照把刚推送的新记录覆盖掉。
+
+`ConversionHistoryStore` 的状态在 `electron/main/services/history/store.ts`。它只依赖注入的 `readFile`/`writeFile`/`rename`/`access` 等函数，所以测试可以在真实临时目录里验证原子写入、损坏回退和跨实例恢复，而不需要启动 Electron。
+
 ---
 
 ## 9. 单个转换任务真正做了什么
@@ -921,6 +954,8 @@ ffprobe -version
 │ - MediaList（已导入文件）          │ - 开始转换               │
 │                                   ├──────────────────────────┤
 │                                   │ JobQueue（任务队列）      │
+│                                   ├──────────────────────────┤
+│                                   │ HistoryCard（转换历史）    │
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
@@ -930,7 +965,9 @@ ffprobe -version
 - `MediaList.tsx`：列表容器和“继续添加”；
 - `MediaCard.tsx`：缩略图、文件名、路径、元数据、错误；
 - `ConversionSettings.tsx`：格式、预设、输出目录、开始按钮；
-- `JobQueue.tsx`：任务汇总、进度、取消、打开输出、复制错误。
+- `AdvancedSettings.tsx`：高级参数与独立的命令预览折叠；
+- `JobQueue.tsx`：任务汇总、进度、取消、打开输出、复制错误；
+- `HistoryCard.tsx`：右侧栏终态历史、筛选、打开输出、二次确认清空。
 
 主界面不再展示 Electron / Node / FFmpeg 版本和路径。
 
@@ -946,8 +983,11 @@ importing      // 是否正在导入
 importError    // 全局导入错误
 format         // 输出格式
 qualityPreset  // 质量预设
-outputDirectory// 输出目录
+outputDirectory// 输出目录（首次导入自动填源目录，手动选择后锁定）
 jobs           // 转换任务
+history        // 持久化终端态历史
+historyLoading // 历史首屏加载
+historyError   // 历史读取/清空错误
 starting       // 是否正在创建任务
 conversionError// 全局转换错误
 dragActive     // 拖拽覆盖层
@@ -961,11 +1001,13 @@ dragActive     // 拖拽覆盖层
 - **拖拽导入**：拖入工作区，显示覆盖层，松开后按路径导入；
 - **Ctrl+O**：打开文件选择器；
 - **Ctrl+Enter**：条件满足时开始转换；
-- **输出设置**：格式、质量、输出目录；
+- **输出设置**：格式、质量、输出目录；首次导入后默认源目录，手动选择后保持；
 - **开始转换**：导入项中存在元数据成功的文件、已选输出目录、FFmpeg 就绪、当前没有活跃任务；
 - **取消任务**：排队中或转换中的任务；
 - **打开文件 / 打开所在目录**：只对已完成任务显示；
 - **复制错误 / 打开日志目录**：只对失败任务显示；
+- **转换历史**：右侧栏加载最近 200 条终态；筛选、打开输出、复制错误、二次确认清空；
+- **命令预览折叠**：高级设置内部独立按钮，默认展开；
 - **关闭保护**：有活跃任务时弹原生确认框。
 
 ### 11.4 为什么 UI 不显示假进度
@@ -1017,7 +1059,7 @@ devTools: !isPackaged
 
 ### 12.3 IPC 层
 
-- preload 只暴露 14 个方法；
+- preload 只暴露 19 个方法；
 - 不暴露 `ipcRenderer`、`fs`、`child_process`、`dialog`；
 - 每个 handler 校验 sender 是否是当前主窗口；
 - 每个入口做参数形状、类型、数量、路径校验；
@@ -1116,9 +1158,10 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 | `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 | 6 |
 | `test/phase-06-formats.test.tsx` | 能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI | 19 |
 | `test/phase-07-advanced.test.tsx` | 高级设置、主进程校验、命令预览、speed/ETA、队列 telemetry、真实 480p 转换、UI、App 提交链路 | 12 |
-| **合计** | | **124** |
+| `test/phase-08-history.test.tsx` | 历史合并/存储、损坏回退、队列终态去重、preload 契约、历史卡片、默认输出目录、并发合并、命令预览折叠 | 14 |
+| **合计** | | **138** |
 
-2026-10-22 的真实结果：7 个测试文件、124 个测试全部通过，无 skip。
+2026-10-22 的真实结果：8 个测试文件、138 个测试全部通过，无 skip。
 
 ### 14.2 测试层次
 
@@ -1430,9 +1473,18 @@ M3 已完成：
 - 真实 `speed` 平滑和“估算中”ETA，不伪造倒计时；
 - 真实 1280×720 → 480p/CRF 18/移除音轨，FFprobe 确认 854×480 且无音频；
 - 打包版 E2E 增加高级转换和命令预览截图；
-- 124 个测试全绿，`docs/evidence/phase7-advanced.png` 为真实打包版截图。
+- M3 当时 124 个测试全绿，`docs/evidence/phase7-advanced.png` 为真实打包版截图。
 
-M4/M5 等开发者验收 M2/M3 后再确定；M6 再做最终安装包、独立干净 VM、`SESSION_SUMMARY.md`、GitHub Release。
+M4 已完成：
+
+- 主进程历史 JSON 原子持久化、终态去重、损坏备份、最近 200 条；
+- 右侧栏历史卡片、筛选、打开输出、复制错误、二次确认清空；
+- 首次导入默认源文件目录，手动选择后不被覆盖；
+- 高级设置内部命令预览独立折叠；
+- 打包版 E2E 验证 4 条历史落盘、重启恢复、清空不删输出；
+- 138 个测试全绿，`docs/evidence/phase8-history.png` 为真实打包版截图。
+
+M5 等开发者给出视觉参考后调整；M6 再做最终安装包、独立干净 VM、`SESSION_SUMMARY.md`、GitHub Release。
 
 ### 17.7 给弱模型的每轮任务模板
 
@@ -1494,7 +1546,7 @@ M4/M5 等开发者验收 M2/M3 后再确定；M6 再做最终安装包、独立�
 ### 18.2 可以强调的工程点
 
 - 主进程 / preload / renderer 三层边界；
-- 14 个最小 preload API；
+- 19 个最小 preload API；
 - renderer 不能执行任意命令；
 - `spawn` 参数数组，不拼 shell；
 - 串行队列和任务状态机；
@@ -1503,7 +1555,7 @@ M4/M5 等开发者验收 M2/M3 后再确定；M6 再做最终安装包、独立�
 - 取消真实子进程；
 - 100% 只在退出码、文件和 FFprobe 编码校验后出现；
 - 真实编码器能力探测，不显示假支持；
-- 124 个测试和真实打包版/安装版无 PATH E2E；
+- 138 个测试和真实打包版/安装版无 PATH E2E；
 - 安装包内置 FFmpeg，`source: "bundled"` 可验证；
 - 开发日志保留了决策、反馈、RED/GREEN 和真实问题。
 
@@ -1515,7 +1567,7 @@ M4/M5 等开发者验收 M2/M3 后再确定；M6 再做最终安装包、独立�
 - “卸载流程已经自动化验证”（没有）；
 - “所有系统窗口都自动化测试过”（没有）；
 - “视觉设计已经定稿”（没有）；
-- “M4/M5 已经完成”（没有，等验收后再定）；
+- “M5/M6 已经完成”（没有，M5 等视觉参考，M6 等最终打包验收）；
 - “GPL 合规已经由法律确认”（没有，只保留了声明和源码获取方式）；
 - “所有场景都覆盖了”（多文件拖拽、干净 VM、代码签名等还没做）。
 
@@ -1558,24 +1610,23 @@ M4/M5 等开发者验收 M2/M3 后再确定；M6 再做最终安装包、独立�
 
 ---
 
-## 21. 当前限制与 M4/M6 待办
+## 21. 当前限制与 M5/M6 待办
 
 ### 21.1 当前限制
 
 - 单窗口、单队列、串行转换；不支持并发、暂停、重排；
-- 输出目录、格式、质量预设不持久化；
+- 输出目录、格式、质量预设和高级设置不持久化；只有转换历史持久化；
 - 不支持字幕轨保留；
 - 不做硬件加速；
 - 当前格式为 MP4/MKV/WebM/MP3；MOV、GIF、H.265、AV1 不在 P0/P1 范围；
-- 输出设置和高级设置尚未持久化；
-- M4 完成提示音/持久化、M5 视觉方向等开发者验收 M2/M3 后再定；
+- M5 视觉方向等开发者给出参考；完成提示音/设置持久化仍是可选 P1；M6 最终打包验收；
 - 原生关闭对话框的真实点击未自动化；
 - 系统“打开文件/打开目录”窗口未反复自动化；
 - 多文件拖拽有单元测试，但真实 E2E 只覆盖单文件；
 - 独立干净 Windows VM 的安装/取消/打开输出/卸载尚未执行；
 - 安装包未代码签名，可能出现 SmartScreen 提示；
 - 当前安装包和 zip 是 M1 基线，M6 需要基于 M2–M5 最终代码重建；
-- `docs/SESSION_SUMMARY.md` 已更新到 M2，M6 需要更新最终版；
+- `docs/SESSION_SUMMARY.md` 已更新到 M4，M6 需要更新最终版；
 - GPL 合规仍需维护者确认。
 
 ### 21.2 下一步计划
@@ -1584,9 +1635,9 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 
 摘要：
 
-1. M1/M2/M3 已完成：FFmpeg 随包、无 PATH 真实转换、能力探测、WebM/MP3、高级设置、命令预览、动态 ETA；
-2. 按约定停在 M2/M3，等开发者检验真实行为、UI 和证据；
-3. 验收后再细化 M4 可选 polish，并按开发者参考调整 M5 视觉；
+1. M1/M2/M3/M4 已完成：FFmpeg 随包、无 PATH 真实转换、能力探测、WebM/MP3、高级设置、命令预览/折叠、动态 ETA、转换历史、默认输出目录；
+2. 等开发者验收 M4 的真实行为、UI 和证据；
+3. 按开发者参考调整 M5 视觉；完成提示音/设置持久化仍是可选 P1；
 4. 最后做 M6 最终安装包、独立干净 VM、`SESSION_SUMMARY.md` 和 GitHub Release。
 
 ---
@@ -1596,10 +1647,10 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 如果只能记住五件事：
 
 1. **这是桌面客户端，不是网页**：原生文件对话框、本地路径、真实 FFmpeg 子进程。
-2. **界面和系统能力是分开的**：React 只调用 14 个 preload 方法，主进程负责文件、进程和队列。
+2. **界面和系统能力是分开的**：React 只调用 19 个 preload 方法，主进程负责文件、进程和队列。
 3. **转换是真的**：`spawn` 参数数组、真实进度、临时文件、FFprobe 输出校验、不覆盖同名文件。
 4. **失败是被设计过的**：坏文件、无音轨、缩略图失败、取消、关闭窗口、FFmpeg 缺失、编码不符都有路径。
-5. **证据比自述重要**：124 个测试、真实 RED/GREEN、无 PATH 的打包版/安装版 E2E、日志和截图，才是项目完成度的证明。
+5. **证据比自述重要**：138 个测试、真实 RED/GREEN、无 PATH 的打包版/安装版 E2E、日志和截图，才是项目完成度的证明。
 
 ---
 

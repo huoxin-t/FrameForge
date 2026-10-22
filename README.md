@@ -2,9 +2,9 @@
 
 本地视频格式转换桌面客户端。用 Electron + React + TypeScript 调用真实的 `ffmpeg` / `ffprobe`，完成视频导入、媒体信息读取、缩略图、格式转换和串行任务队列。
 
-> 当前进度：**M3（高级设置 + 只读命令预览 + 动态 ETA）已完成**。
-> M1 安装包已内置 FFmpeg/FFprobe；M2 增加真实编码器探测、WebM（VP9 + Opus）和仅音频 MP3；M3 增加分辨率/CRF/音频码率/音频模式、与执行共用参数构造的命令预览，以及来自真实 `speed` 的动态 ETA。
-> 按当前约定停在 M2/M3，等开发者验收后再细化 M4/M5。完整计划见 [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md)。
+> 当前进度：**M4（转换历史 + 默认输出目录 + 命令预览折叠）已完成**。
+> M1 安装包已内置 FFmpeg/FFprobe；M2 增加真实编码器探测、WebM（VP9 + Opus）和仅音频 MP3；M3 增加高级设置、与执行共用参数构造的命令预览，以及来自真实 `speed` 的动态 ETA；M4 增加右侧栏持久化转换历史、首次导入自动使用源文件目录，以及命令预览独立展开/折叠。
+> 视觉重做 M5 和最终安装包/Release 的 M6 仍待继续。完整计划见 [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md)。
 
 ![FrameForge 打包版工作台](docs/evidence/phase6-formats.png)
 
@@ -19,13 +19,15 @@
 - 启动时真实执行 `ffmpeg -hide_banner -encoders`，只把当前构建真正拥有的编码器显示为可用；缺失时禁用格式并说明原因。
 - MP3 只导出音频；无音轨视频在入队阶段被拒绝。WebM 无音轨输入使用 `-an`，不会凭空生成音轨。
 - 高级设置默认折叠：分辨率（原始/1080p/720p/480p，不放大、偶数宽度）、CRF 18–30、音频码率 128/192/256 kbps、保留/移除音频。
-- 只读命令预览与实际执行共用 `buildConversionArgs()`，支持复制；renderer 不能传任意 FFmpeg 参数。
+- 只读命令预览与实际执行共用 `buildConversionArgs()`，支持复制；命令预览在高级设置内部还有独立的展开/折叠开关；renderer 不能传任意 FFmpeg 参数。
+- 首次导入后默认把首个有效源文件所在目录作为输出目录；用户手动选择后不会被后续导入覆盖。
+- 右侧栏保留完成、失败和取消的转换历史，启动时从主进程 `userData` 下的 JSON 恢复，最多 200 条；支持筛选、打开输出、复制错误和二次确认清空。清空历史不删除输出文件。
 - 动态 ETA 只使用真实 `speed`；最近 5 个样本平滑，不足两个样本显示“估算中”，任务完成/取消后清除。
 - 串行任务队列：失败/取消不会阻塞后续任务；取消会终止真实子进程并清理临时文件。
 - 进度来自 FFmpeg `-progress pipe:1`，成功前最多 99%；完成状态必须经过退出码、临时文件、最终文件非空和 FFprobe 容器/编码/轨道校验。
 - 输出名冲突自动生成 `_converted (1)`、`_converted (2)`，不覆盖已有文件。
 - 完成任务可打开文件或所在目录；失败任务可复制错误并打开日志目录。
-- Windows 安装包和完整目录 zip 均已生成；安装包内置 FFmpeg/FFprobe 和许可证文件。当前安装包和 zip 是 M1 基线；M2/M3 功能已在重新构建的 `win-unpacked` 验证，最终安装包/zip 在 M6 统一重建。
+- Windows 安装包和完整目录 zip 均已生成；安装包内置 FFmpeg/FFprobe 和许可证文件。当前安装包和 zip 是 M1 基线；M2/M3/M4 功能已在重新构建的 `win-unpacked` 验证，最终安装包/zip 在 M6 统一重建。
 
 界面不会用定时器伪造进度，也不会在失败时假装生成输出文件。
 
@@ -100,7 +102,7 @@ electron/
     window-options.ts           # 窗口安全配置
     security.ts                 # 禁止外部导航与新窗口
     ipc/
-      handlers.ts               # 受控 IPC：应用信息 / 导入 / 转换 / 打开 / 复制 / 日志
+      handlers.ts               # 受控 IPC：应用信息 / 导入 / 转换 / 历史 / 打开 / 复制 / 日志
       guard.ts                  # IPC 调用方校验
     services/
       close-guard.ts             # 关闭窗口前的任务确认、取消和等待
@@ -126,6 +128,8 @@ electron/
         runner.ts               # 真实转换、输出验证、临时文件清理
         queue.ts                # 串行队列、状态机、失败隔离、取消
         validation.ts           # IPC 输入、任务 ID、剪贴板文本验证
+      history/
+        store.ts                # 终态历史 JSON：原子写入、校验、损坏备份、最近 200 条
       system/
         open-path.ts            # 只打开主进程确认存在的目录
         path-exists.ts          # 受控路径存在性检查
@@ -136,12 +140,14 @@ shared/
   ipc.ts                        # 主进程 / preload / renderer 共享 IPC 契约
   conversion.ts                 # 格式 profile、质量预设、高级设置、任务状态、进度事件类型
   conversion-args.ts            # 执行与命令预览共用的 FFmpeg 参数构造
+  history.ts                    # 历史记录类型、合并去重和 200 条上限
+  path.ts                       # 跨平台父目录 / 文件名辅助
   capabilities.ts               # 编码器能力矩阵与格式可用性
   media.ts                      # 媒体、缩略图、FFmpeg 状态类型
   media-format.ts               # 时长 / 帧率 / 大小 / 分辨率格式化
 src/
-  App.tsx                       # 导入、输出设置、高级设置、队列订阅和任务状态
-  components/                   # AppShell / FfmpegErrorBanner / EmptyState / MediaCard / MediaList / ConversionSettings / AdvancedSettings / JobQueue
+  App.tsx                       # 导入、输出设置、高级设置、队列/历史订阅和任务状态
+  components/                   # AppShell / FfmpegErrorBanner / EmptyState / MediaCard / MediaList / ConversionSettings / AdvancedSettings / JobQueue / HistoryCard
 scripts/
   prepare-ffmpeg.mjs            # 复制并真实验证随包 FFmpeg
   e2e-packaged.mjs              # 无 PATH 的打包版/安装版 E2E
@@ -157,6 +163,7 @@ test/
   phase-05-delivery.test.tsx    # 阶段 5：随包布局、打包配置、环境面板移除
   phase-06-formats.test.tsx     # 阶段 6：能力矩阵、WebM/MP3 参数、真实输出、UI
   phase-07-advanced.test.tsx    # 阶段 7：高级设置、命令预览、speed/ETA、真实 480p 转换
+  phase-08-history.test.tsx     # 阶段 8：历史存储/恢复、队列终态、preload、历史卡片、默认输出目录
 docs/
   PROJECT_SPEC.md               # 需求规格
   DEVELOPER_GUIDE.md            # 开发者实现教程
@@ -206,7 +213,7 @@ THIRD_PARTY_NOTICES.md          # FFmpeg/Electron/依赖许可证与源码获取
 - `nodeIntegration: false`
 - `sandbox: true`
 - `webSecurity: true`
-- preload 只暴露十四个受控方法：
+- preload 只暴露十九个受控方法：
   - `getAppInfo()`
   - `getFfmpegStatus()`
   - `getConversionCapabilities()`
@@ -219,11 +226,16 @@ THIRD_PARTY_NOTICES.md          # FFmpeg/Electron/依赖许可证与源码获取
   - `onConversionUpdate(callback)`，返回取消订阅函数
   - `openOutputFile(jobId)`
   - `showOutputInFolder(jobId)`
+  - `getConversionHistory()`
+  - `clearConversionHistory()`
+  - `onHistoryUpdated(callback)`，返回取消订阅函数
+  - `openHistoryOutput(historyId)`
+  - `showHistoryOutputInFolder(historyId)`
   - `copyText(text)`
   - `openLogDirectory()`
 - 不暴露 `ipcRenderer`、`fs`、`child_process`、`dialog` 或通用命令执行接口。
 - renderer 不能传入自定义 FFmpeg 参数；转换参数由主进程按格式和预设构造。
-- 打开文件/目录和复制文本都通过主进程受控 IPC：输出路径只接受任务 ID，日志目录由主进程确定，复制文本限制为 20,000 字符。
+- 打开文件/目录和复制文本都通过主进程受控 IPC：输出路径只接受任务 ID 或历史记录 ID，日志目录由主进程确定，复制文本限制为 20,000 字符。
 - 拖拽导入只接受有限数量、绝对路径和已知视频扩展名；真正的媒体合法性仍由 FFprobe 验证。
 - 主进程校验 IPC 调用方必须是当前主窗口。
 - 拒绝新窗口与外部导航。
@@ -239,11 +251,11 @@ spawn(executablePath, args, { shell: false });
 2026-10-22 已执行：
 
 ```text
-npm test           7 个测试文件，124 个测试全部通过，无 skip
+npm test           8 个测试文件，138 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 npm run dist:dir   免安装目录版构建成功
-npm run e2e:packaged 目录版无 PATH 真实转换通过（MP4 / WebM / MP3 / 高级设置）
+npm run e2e:packaged 目录版无 PATH 真实转换和 M4 历史持久化/恢复/清空通过
 ```
 
 打包版无 PATH E2E 真实结果：
@@ -260,13 +272,16 @@ WebM: 73,708 字节，VP9 640×360 + Opus
 MP3:  67,019 字节，仅 MP3 音频，无视频轨道
 高级 MP4: 45,186 字节，H.264 854×480，无音频（480p + CRF 18 + 移除音轨）
 能力探测: libx264 / aac / libvpx-vp9 / libopus / libmp3lame 全部可用
+默认输出目录: 首次导入后为 ...\输入 样本
+历史: 4 条完成记录写入 conversion-history.json，重启后恢复 4 条，清空后 0 条，4 个输出文件仍保留
 ```
 
 截图：
 
 - `docs/evidence/phase6-formats.png`：打包版 WebM 格式与能力说明
 - `docs/evidence/phase6-mp3.png`：仅音频 MP3 设置
-- `docs/evidence/phase7-advanced.png`：高级设置与只读命令预览
+- `docs/evidence/phase7-advanced.png`：高级设置、命令预览折叠开关与只读命令
+- `docs/evidence/phase8-history.png`：重启后右侧栏恢复的转换历史
 - `docs/evidence/phase5-installed.png`：安装版真实转换
 - `docs/evidence/phase5-packaged.png`：目录版真实转换
 - `docs/evidence/phase5-zip.png`：完整目录 zip 真实转换
@@ -290,14 +305,15 @@ MP3:  67,019 字节，仅 MP3 音频，无视频轨道
 
 - 当前单窗口、单队列、串行转换；不支持并发编码或队列暂停/重排。
 - 当前格式为 MP4 / MKV / WebM / MP3；MOV、GIF、H.265、AV1 不在当前范围。
-- 高级设置、只读命令预览、动态 ETA 已在 M3 完成；当前没有任意命令编辑、队列暂停或视频剪辑。
+- 高级设置、只读命令预览、动态 ETA 已在 M3 完成；M4 增加历史与默认输出目录，但当前仍没有任意命令编辑、队列暂停或视频剪辑。
 - 编码器能力来自启动时的 `ffmpeg -encoders`；更换 FFmpeg 构建后需要重启或重新检测。
-- 输出目录、格式、质量预设和高级设置尚未持久化，关闭应用后需要重新选择。
-- 整体视觉重做尚未开始；等 M2/M3 验收后按开发者参考调整 M5。
+- 输出目录、格式、质量预设和高级设置尚未持久化，关闭应用后需要重新选择；只有转换历史会持久化，最多保留最近 200 条。
+- 整体视觉重做尚未开始；等 M4 验收后按开发者参考调整 M5。
 - 关闭保护有单元测试和主进程接线；原生确认对话框的真实点击流程尚未自动化。
 - “打开文件”和“打开日志目录”的真实系统窗口未在自动化中反复打开；输出路径存在性和 IPC 拒绝路径已测试。
+- 历史记录的打开操作使用历史记录 ID，不复用重启前的队列任务 ID；历史文件损坏时会备份并回退为空列表，不会阻塞启动。
 - 多文件真实拖拽未单独做 E2E；同一路径数组、数量校验和去重有单元测试。
-- 当前安装包和 zip 是 M1 基线，尚未包含 M2/M3 的 WebM/MP3、高级设置和 ETA；M6 功能冻结后统一重建。
+- 当前安装包和 zip 是 M1 基线，尚未包含 M2/M3/M4 的 WebM/MP3、高级设置、ETA、历史和默认输出目录；M6 功能冻结后统一重建。
 - 安装包未配置代码签名，可能出现 SmartScreen 提示。
 - 独立干净 Windows VM 的安装、取消、打开输出、卸载验收尚未执行；当前是“新目录安装/zip 解压 + 移除 PATH + 静默卸载”的本机验证。
 - 未保留字幕轨，未做硬件加速；这是当前 MVP 的明确范围取舍。

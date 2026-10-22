@@ -907,6 +907,11 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
     showOutputInFolder: vi.fn().mockResolvedValue(undefined),
     copyText: vi.fn().mockResolvedValue(undefined),
     openLogDirectory: vi.fn().mockResolvedValue(undefined),
+    getConversionHistory: vi.fn().mockResolvedValue([]),
+    clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+    onHistoryUpdated: vi.fn(() => () => undefined),
+    openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+    showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
   Object.defineProperty(window, 'desktopAPI', {

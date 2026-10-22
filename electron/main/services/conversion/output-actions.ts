@@ -4,12 +4,18 @@
  * renderer 只能传任务 id，由主进程从队列中取出真实输出路径；这里再次
  * 校验任务状态和文件存在性，避免把任意路径打开能力暴露给页面。
  */
-import type { ConversionJob } from '../../../../shared/conversion';
+import type { ConversionJobStatus } from '../../../../shared/conversion';
 
 export interface OutputActionDependencies {
   openPath: (path: string) => Promise<string>;
   showItemInFolder: (path: string) => void;
   pathExists: (path: string) => Promise<boolean>;
+}
+
+/** 队列任务和历史记录都只需要这两个字段。 */
+export interface OpenableOutput {
+  status: ConversionJobStatus;
+  outputPath: string;
 }
 
 export class OutputActionError extends Error {
@@ -19,7 +25,7 @@ export class OutputActionError extends Error {
   }
 }
 
-function getCompletedOutputPath(job: ConversionJob | null): string {
+function getCompletedOutputPath(job: OpenableOutput | null): string {
   if (!job || job.status !== 'completed' || !job.outputPath.trim()) {
     throw new OutputActionError('任务尚未成功完成，无法打开输出文件');
   }
@@ -27,7 +33,7 @@ function getCompletedOutputPath(job: ConversionJob | null): string {
 }
 
 async function assertOutputExists(
-  job: ConversionJob | null,
+  job: OpenableOutput | null,
   dependencies: OutputActionDependencies,
 ): Promise<string> {
   const outputPath = getCompletedOutputPath(job);
@@ -38,7 +44,7 @@ async function assertOutputExists(
 }
 
 export async function openCompletedOutput(
-  job: ConversionJob | null,
+  job: OpenableOutput | null,
   dependencies: OutputActionDependencies,
 ): Promise<void> {
   const outputPath = await assertOutputExists(job, dependencies);
@@ -49,7 +55,7 @@ export async function openCompletedOutput(
 }
 
 export async function revealCompletedOutput(
-  job: ConversionJob | null,
+  job: OpenableOutput | null,
   dependencies: OutputActionDependencies,
 ): Promise<void> {
   const outputPath = await assertOutputExists(job, dependencies);

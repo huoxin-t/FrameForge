@@ -336,17 +336,22 @@ describe('阶段 4 / preload 契约', () => {
 
     expect([...DESKTOP_API_KEYS].sort()).toEqual([
       'cancelConversion',
+      'clearConversionHistory',
       'copyText',
       'getAppInfo',
       'getConversionCapabilities',
+      'getConversionHistory',
       'getFfmpegStatus',
       'getPathForFile',
       'importVideos',
       'onConversionUpdate',
+      'onHistoryUpdated',
+      'openHistoryOutput',
       'openLogDirectory',
       'openOutputFile',
       'selectOutputDirectory',
       'selectVideos',
+      'showHistoryOutputInFolder',
       'showOutputInFolder',
       'startConversions',
     ]);
@@ -412,6 +417,11 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
     showOutputInFolder: vi.fn().mockResolvedValue(undefined),
     copyText: vi.fn().mockResolvedValue(undefined),
     openLogDirectory: vi.fn().mockResolvedValue(undefined),
+    getConversionHistory: vi.fn().mockResolvedValue([]),
+    clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+    onHistoryUpdated: vi.fn(() => () => undefined),
+    openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+    showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
     onConversionUpdate: vi.fn((listener: (update: { job: ConversionJob }) => void) => {
       updateListeners.push(listener);
       return () => {
@@ -554,7 +564,8 @@ describe('阶段 4 / 体验 UI', () => {
     const copyText = vi.fn().mockResolvedValue(undefined);
     await renderWithFinishedJob(failedJob, { copyText });
 
-    const card = screen.getByText('失败').closest('article');
+    const queue = within(screen.getByRole('region', { name: '任务队列' }));
+    const card = queue.getByText('失败').closest('article');
     expect(card).not.toBeNull();
     const actions = within(card as HTMLElement);
 

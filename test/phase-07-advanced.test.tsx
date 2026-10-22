@@ -531,6 +531,11 @@ describe('阶段 7 / 高级设置与任务 UI', () => {
       showOutputInFolder: vi.fn().mockResolvedValue(undefined),
       copyText: vi.fn().mockResolvedValue(undefined),
       openLogDirectory: vi.fn().mockResolvedValue(undefined),
+      getConversionHistory: vi.fn().mockResolvedValue([]),
+      clearConversionHistory: vi.fn().mockResolvedValue(undefined),
+      onHistoryUpdated: vi.fn(() => () => undefined),
+      openHistoryOutput: vi.fn().mockResolvedValue(undefined),
+      showHistoryOutputInFolder: vi.fn().mockResolvedValue(undefined),
     };
     Object.defineProperty(window, 'desktopAPI', {
       configurable: true,

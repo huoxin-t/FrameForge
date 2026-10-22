@@ -4,6 +4,7 @@ import type {
   StartConversionsRequest,
 } from './conversion';
 import type { ConversionCapabilities } from './capabilities';
+import type { ConversionHistoryEntry } from './history';
 import type { FfmpegStatus, MediaItem } from './media';
 
 export const IPC_CHANNELS = {
@@ -16,6 +17,11 @@ export const IPC_CHANNELS = {
   startConversions: 'conversion:start',
   cancelConversion: 'conversion:cancel',
   conversionUpdate: 'conversion:update',
+  getConversionHistory: 'history:list',
+  clearConversionHistory: 'history:clear',
+  historyUpdated: 'history:updated',
+  openHistoryOutput: 'shell:open-history-output',
+  showHistoryOutputInFolder: 'shell:show-history-output-in-folder',
   openOutputFile: 'shell:open-output-file',
   showOutputInFolder: 'shell:show-output-in-folder',
   copyText: 'clipboard:write-text',
@@ -47,6 +53,12 @@ export interface DesktopAPI {
   cancelConversion(jobId: string): Promise<void>;
   /** 返回取消订阅函数；组件卸载时必须调用。 */
   onConversionUpdate(callback: (update: ConversionUpdate) => void): () => void;
+  getConversionHistory(): Promise<ConversionHistoryEntry[]>;
+  clearConversionHistory(): Promise<void>;
+  /** 仅由主进程在历史写入成功后推送。 */
+  onHistoryUpdated(callback: (entry: ConversionHistoryEntry) => void): () => void;
+  openHistoryOutput(historyId: string): Promise<void>;
+  showHistoryOutputInFolder(historyId: string): Promise<void>;
   openOutputFile(jobId: string): Promise<void>;
   showOutputInFolder(jobId: string): Promise<void>;
   copyText(text: string): Promise<void>;
@@ -64,6 +76,11 @@ export const DESKTOP_API_KEYS = [
   'startConversions',
   'cancelConversion',
   'onConversionUpdate',
+  'getConversionHistory',
+  'clearConversionHistory',
+  'onHistoryUpdated',
+  'openHistoryOutput',
+  'showHistoryOutputInFolder',
   'openOutputFile',
   'showOutputInFolder',
   'copyText',

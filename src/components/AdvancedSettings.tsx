@@ -41,6 +41,7 @@ export function AdvancedSettings({
   onCopyCommand,
 }: AdvancedSettingsProps) {
   const [open, setOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(true);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>(
     'idle',
   );
@@ -222,9 +223,19 @@ export function AdvancedSettings({
 
           <div className="border-t border-white/10 pt-3">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-slate-400">
-                命令预览（只读）
-              </span>
+              <button
+                type="button"
+                onClick={() => setCommandOpen((current) => !current)}
+                aria-expanded={commandOpen}
+                className="inline-flex items-center gap-1 rounded text-[11px] font-medium text-slate-400 transition hover:text-slate-200"
+              >
+                FFmpeg 命令预览
+                <ChevronDown
+                  size={12}
+                  aria-hidden="true"
+                  className={`transition-transform ${commandOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
               <button
                 type="button"
                 onClick={() => void handleCopy()}
@@ -239,20 +250,24 @@ export function AdvancedSettings({
                 复制命令
               </button>
             </div>
-            <pre
-              data-testid="command-preview"
-              className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/40 p-2 text-[10px] leading-4 text-slate-400"
-            >
-              {commandPreview ?? '暂无可预览命令'}
-            </pre>
-            <p className="mt-1 text-[10px] leading-5 text-slate-600">
-              {previewNote}
-            </p>
-            {copyState === 'copied' ? (
-              <p className="mt-1 text-[10px] text-emerald-300">命令已复制</p>
-            ) : null}
-            {copyState === 'failed' ? (
-              <p className="mt-1 text-[10px] text-rose-300">复制命令失败</p>
+            {commandOpen ? (
+              <>
+                <pre
+                  data-testid="command-preview"
+                  className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/40 p-2 text-[10px] leading-4 text-slate-400"
+                >
+                  {commandPreview ?? '暂无可预览命令'}
+                </pre>
+                <p className="mt-1 text-[10px] leading-5 text-slate-600">
+                  {previewNote}
+                </p>
+                {copyState === 'copied' ? (
+                  <p className="mt-1 text-[10px] text-emerald-300">命令已复制</p>
+                ) : null}
+                {copyState === 'failed' ? (
+                  <p className="mt-1 text-[10px] text-rose-300">复制命令失败</p>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>

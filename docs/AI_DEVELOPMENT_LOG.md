@@ -1361,3 +1361,112 @@ ffmpeg: 8.0.1
 - 安装包/zip 尚未包含 M2/M3 功能；
 - 代码签名、GPL 合规、独立干净 VM 验收仍在 M6 前处理；
 - AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。
+
+---
+
+## 2026-10-22 / M4：转换历史 + 默认输出目录 + 命令预览折叠
+
+### 目标
+
+在不改变转换真实性的前提下补齐开发者要求的 M4：
+
+- 高级设置里的 FFmpeg 命令预览增加独立展开/折叠；
+- 右侧栏增加完成/失败/取消历史，重启后恢复，最多 200 条；
+- 清空历史只删记录，不删输出文件；
+- 首次导入后默认使用首个有效源文件目录，手动选择后不被覆盖；
+- 历史只能由主进程写，renderer 不接触文件系统；
+- 历史动作使用独立历史 ID，不复用重启后的队列任务 ID。
+
+### 测试先行
+
+新增 `test/phase-08-history.test.tsx`，RED 记录在 `test-results/phase8-history-red.log`。首次运行的真实失败是：
+
+```text
+Failed to resolve import "../src/components/HistoryCard" from "test/phase-08-history.test.tsx"
+```
+
+实现后聚焦测试仍有 3 个失败，分别暴露：
+
+- 历史记录断言假设了任务 ID 顺序，但校验失败记录会在首个完成记录之前写入；
+- “打开文件”按钮的 accessible name 同时匹配“打开文件夹”，需要精确名称；
+- 历史筛选按钮“失败/取消”和任务队列状态文本重名，需要限定到右侧栏或任务队列。
+
+修正后 `test-results/phase8-history-green.log` 记录 13 个用例通过。随后补测“前 5 条 + 展开全部/收起”和“取消运行中任务只通知一次”，M4 用例变为 14 个。
+
+全量回归时出现 8 个旧阶段失败：
+
+- phase-01 两个 App stub 没有新历史方法；
+- phase-03/04 的 `DESKTOP_API_KEYS` 精确数组缺少 5 个历史键；
+- phase-03 仍断言“未选择输出目录”，与新默认源目录冲突；
+- phase-03/04 的“失败/取消”文本同时匹配历史筛选按钮。
+
+处理方式是补 API stub、更新契约数组、把默认目录断言改为源目录，并把状态文本断言限定到 `任务队列` region；没有删除契约检查。
+
+### 实现
+
+1. 共享契约
+   - `shared/history.ts`：历史记录类型、终态集合、`MAX_CONVERSION_HISTORY_ENTRIES=200`、按时间倒序/ID 去重/截断的 `mergeHistoryEntries()`；
+   - `shared/path.ts`：`getParentDirectory()` 和 `getFileName()`，供默认目录与历史标题使用；
+   - `shared/ipc.ts`：5 个历史通道、`DesktopAPI` 方法、`DESKTOP_API_KEYS`。
+
+2. 主进程
+   - `electron/main/services/history/store.ts`：注入文件系统依赖的 `ConversionHistoryStore`；`record()` 只接受终态、按 job ID 去重、原子临时文件 + rename、损坏 JSON 备份、最近 200 条；`list()` 重新检查完成输出是否存在；`clear()` 只清记录；
+   - `conversion/queue.ts`：新增 `onTerminal` 回调和 `terminalNotified` 集合；完成、失败、取消（含排队取消和运行中 abort）只通知一次，并携带入队时设置；
+   - `ipc/handlers.ts`：构造 store，终态写入后推送 `history:updated`；历史读取、清空、打开文件/文件夹走独立 IPC，打开动作先按历史 ID 取真实记录并检查输出存在。
+
+3. preload / renderer
+   - `electron/preload/api.ts`：历史读取/清空/订阅/打开方法，订阅返回取消函数；
+   - `src/components/HistoryCard.tsx`：右侧栏历史卡片，默认 5 条、展开全部、筛选、缺失输出禁用、复制错误、二次确认清空；
+   - `src/components/AdvancedSettings.tsx`：高级面板内部的命令预览独立折叠，默认展开；
+   - `src/components/ConversionSettings.tsx`：输出目录 `data-testid` 和“默认源目录”提示；
+   - `src/App.tsx`：首次有效导入自动填源目录、历史首屏读取、历史事件订阅、并发合并、清空/打开动作接线。
+
+### 测试与构建结果
+
+```text
+npx vitest run test/phase-08-history.test.tsx   14/14 通过
+npm test                                         8 个文件，138/138 通过，无 skip
+npm run typecheck                                通过
+npm run dist:dir                                 win-unpacked 构建成功
+```
+
+### 打包版无 PATH E2E
+
+`scripts/e2e-packaged.mjs` 新增：
+
+- 拖拽导入后断言输出目录等于源文件目录；
+- 4 次真实转换后，历史 API 返回 4 条 completed；
+- 关闭应用后读取 `conversion-history.json`，确认 4 条落盘；
+- 同一 userData 重启，历史卡片恢复 4 条，保存 `phase8-history.png`；
+- 在高级设置中折叠/展开命令预览；
+- 通过界面二次确认清空历史，确认列表 0 条、4 个输出文件仍在。
+
+真实结果：
+
+```text
+PATH: null
+FRAMEFORGE_FFMPEG_DIR: null
+source: bundled
+默认输出目录: ...\test-results\phase5-e2e\输入 样本
+历史: initial 0 → 4 completed → persisted 4 → reloaded 4 → cleared 0
+清空后输出: 4/4 存在
+截图: docs/evidence/phase8-history.png
+日志: test-results/phase8-e2e.log
+```
+
+### 遇到的问题
+
+- 历史筛选按钮“失败/取消”与任务状态文本同名，Testing Library 的全局 `getByText` 会命中两个节点；改为 `within(任务队列 region)`。
+- 历史卡片的“打开文件夹”文本也包含“打开文件”，按钮查询必须用精确名称 “打开文件”。
+- E2E 直接调用 `clearConversionHistory()` 只清主进程，不会更新已经渲染的 UI；改为真实点击“清空”→“确认清空”，同时验证前后端。
+- App 启动读取历史与主进程推送终态可能并发；如果加载结果直接覆盖 state，会丢掉先到的新记录；改为逐条 `mergeHistoryEntries()`。
+- E2E 原等待文本“命令预览（只读）”已被新的“FFmpeg 命令预览”标题取代；同步更新等待条件。
+- 历史截图选择在重启后截取，画面中没有导入媒体，但能直接证明历史从 `userData` 恢复；这是有意的证据取舍。
+
+### 未完成 / 风险
+
+- M5 视觉方向等待开发者参考；M6 重建安装包/zip 并做独立干净 VM 验收；
+- 完成提示音、格式/质量/高级设置持久化仍是可选 P1；
+- 当前 `release/win-unpacked` 已包含 M4；安装包和 zip 仍是 M1 基线；
+- 代码签名、GPL 合规法律确认、独立干净 VM 仍未完成；
+- AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。
