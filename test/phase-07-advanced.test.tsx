@@ -486,6 +486,8 @@ describe('阶段 7 / 高级设置与任务 UI', () => {
         onOpenOutputDirectory={vi.fn()}
         onCopyError={vi.fn()}
         onOpenLogDirectory={vi.fn()}
+        onRemoveJob={vi.fn()}
+        onClearFinished={vi.fn()}
       />,
     );
 
@@ -507,6 +509,8 @@ describe('阶段 7 / 高级设置与任务 UI', () => {
         onOpenOutputDirectory={vi.fn()}
         onCopyError={vi.fn()}
         onOpenLogDirectory={vi.fn()}
+        onRemoveJob={vi.fn()}
+        onClearFinished={vi.fn()}
       />,
     );
 

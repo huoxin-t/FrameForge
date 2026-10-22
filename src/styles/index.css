@@ -21,6 +21,32 @@ body {
   box-sizing: border-box;
 }
 
+/* 顶部玻璃纹理：来源 docs/顶部.md 的 DistortedGlass，按 Electron 深色 header 调低亮度。 */
+.header-glass-texture {
+  background: repeating-radial-gradient(
+    circle at 50% 50%,
+    rgb(255 255 255 / 0),
+    rgb(255 255 255 / 0.22) 10px,
+    rgb(255 255 255 / 0.55) 31px
+  );
+  background-size: 6px 6px;
+  filter: url(#frameforge-header-glass);
+  mix-blend-mode: screen;
+  opacity: 0.68;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 1) 0%,
+    rgb(0 0 0 / 0.65) 62%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 1) 0%,
+    rgb(0 0 0 / 0.65) 62%,
+    transparent 100%
+  );
+}
+
 ::selection {
   background: rgb(251 191 36 / 25%);
 }

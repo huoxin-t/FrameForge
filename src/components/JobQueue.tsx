@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FolderOpen,
   Loader2,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import type { ConversionJob, ConversionJobStatus } from '../../shared/conversion';
@@ -19,6 +20,8 @@ interface JobQueueProps {
   onOpenOutputDirectory: (jobId: string) => void;
   onCopyError: (job: ConversionJob) => Promise<void>;
   onOpenLogDirectory: () => void;
+  onRemoveJob: (jobId: string) => void;
+  onClearFinished: () => void;
 }
 
 const STATUS_LABELS: Record<ConversionJobStatus, string> = {
@@ -72,6 +75,8 @@ export function JobQueue({
   onOpenOutputDirectory,
   onCopyError,
   onOpenLogDirectory,
+  onRemoveJob,
+  onClearFinished,
 }: JobQueueProps) {
   const [copyFeedback, setCopyFeedback] = useState<{
     jobId: string;
@@ -83,6 +88,7 @@ export function JobQueue({
   const activeCount = jobs.filter(
     (job) => job.status === 'queued' || job.status === 'running',
   ).length;
+  const finishedCount = jobs.length - activeCount;
 
   const handleCopyError = async (job: ConversionJob) => {
     try {
@@ -109,9 +115,22 @@ export function JobQueue({
             </p>
           ) : null}
         </div>
-        <span className="shrink-0 text-[11px] text-slate-500">
-          {jobs.length} 个任务
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {finishedCount > 0 ? (
+            <button
+              type="button"
+              onClick={onClearFinished}
+              title="清空已完成、失败和已取消任务，不会删除输出文件"
+              className="inline-flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-[10px] text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-200"
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              清空
+            </button>
+          ) : null}
+          <span className="text-[11px] text-slate-500">
+            {jobs.length} 个任务
+          </span>
+        </div>
       </div>
 
       {jobs.length === 0 ? (
@@ -144,14 +163,27 @@ export function JobQueue({
                       {job.outputPath || '未生成输出路径'}
                     </p>
                   </div>
-                  <span
-                    className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${statusClass(
-                      job.status,
-                    )}`}
-                  >
-                    <StatusIcon status={job.status} />
-                    {STATUS_LABELS[job.status]}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${statusClass(
+                        job.status,
+                      )}`}
+                    >
+                      <StatusIcon status={job.status} />
+                      {STATUS_LABELS[job.status]}
+                    </span>
+                    {!canCancel ? (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveJob(job.id)}
+                        aria-label={`从任务队列删除 ${job.fileName}`}
+                        title="从队列删除（不会删除输出文件）"
+                        className="inline-flex size-5 items-center justify-center rounded border border-transparent text-slate-500 transition hover:border-rose-400/20 hover:bg-rose-400/10 hover:text-rose-300 focus-visible:border-rose-400/40 focus-visible:outline-none"
+                      >
+                        <Trash2 size={11} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="mt-3 flex items-center gap-2">

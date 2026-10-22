@@ -14,6 +14,7 @@
 
 - 通过系统文件选择器或拖拽导入本地视频；支持一次多个文件、中文/空格路径。
 - 全局使用 canvas 动态点阵与渐变背景；鼠标移动产生波光，背景层不拦截任何点击或拖拽。
+- 顶部 header 使用半透明深色底、24px 背景模糊、亮度/饱和度提升和 SVG 噪声位移玻璃纹理；玻璃层为 `pointer-events-none`。
 - 用真实 `ffprobe` 读取时长、分辨率、帧率、容器、视频/音频编码和文件大小。
 - 用真实 `ffmpeg` 抽取缩略图；缩略图失败只显示占位图，不阻塞文件转换。
 - 输出 MP4 / MKV（H.264 + AAC）、WebM（VP9 + Opus）和仅音频 MP3；提供兼容优先、质量优先、体积优先三个质量预设。
@@ -25,6 +26,7 @@
 - 工作区媒体卡片支持逐项移除；转换进行中的文件会禁用移除，移除只影响工作区列表，不会删除原文件。
 - 右侧栏保留完成、失败和取消的转换历史，启动时从主进程 `userData` 下的 JSON 恢复，最多 200 条；支持筛选、打开输出、复制错误和二次确认清空。清空历史不删除输出文件。
 - 动态 ETA 只使用真实 `speed`；最近 5 个样本平滑，不足两个样本显示“估算中”，任务完成/取消后清除。
+- 任务队列支持终态任务单独删除和批量清空；运行中任务只能取消，清空不会删除输出文件或历史记录。
 - 串行任务队列：失败/取消不会阻塞后续任务；取消会终止真实子进程并清理临时文件。
 - 进度来自 FFmpeg `-progress pipe:1`，成功前最多 99%；完成状态必须经过退出码、临时文件、最终文件非空和 FFprobe 容器/编码/轨道校验。
 - 输出名冲突自动生成 `_converted (1)`、`_converted (2)`，不覆盖已有文件。
@@ -150,7 +152,7 @@ shared/
   media-format.ts               # 时长 / 帧率 / 大小 / 分辨率格式化
 src/
   App.tsx                       # 导入、输出设置、高级设置、队列/历史订阅和任务状态
-  components/                   # AppShell / FfmpegErrorBanner / EmptyState / MediaCard / MediaList / ConversionSettings / AdvancedSettings / JobQueue / HistoryCard
+  components/                   # AppShell / HeaderGlass / FfmpegErrorBanner / EmptyState / MediaCard / MediaList / ConversionSettings / AdvancedSettings / JobQueue / HistoryCard
   components/background/        # CanvasFractalGrid 动态点阵/渐变背景
 scripts/
   prepare-ffmpeg.mjs            # 复制并真实验证随包 FFmpeg
@@ -256,7 +258,7 @@ spawn(executablePath, args, { shell: false });
 2026-10-22 已执行：
 
 ```text
-npm test           8 个测试文件，140 个测试全部通过，无 skip
+npm test           8 个测试文件，141 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 npm run dist:dir   免安装目录版构建成功
@@ -283,9 +285,10 @@ MP3:  67,019 字节，仅 MP3 音频，无视频轨道
 
 截图：
 
-- `docs/evidence/phase6-formats.png`：打包版 WebM 格式与能力说明
+- `docs/evidence/phase6-formats.png`：打包版 WebM 格式、任务队列清空/删除入口
 - `docs/evidence/phase6-mp3.png`：仅音频 MP3 设置
 - `docs/evidence/phase7-advanced.png`：高级设置、命令预览折叠开关与只读命令
+- `docs/evidence/phase11-header-glass.png`：顶部玻璃层细节
 - `docs/evidence/phase8-history.png`：重启后右侧栏恢复的转换历史
 - `docs/evidence/phase5-installed.png`：安装版真实转换
 - `docs/evidence/phase5-packaged.png`：目录版真实转换
@@ -313,7 +316,7 @@ MP3:  67,019 字节，仅 MP3 音频，无视频轨道
 - 高级设置、只读命令预览、动态 ETA 已在 M3 完成；M4 增加历史与默认输出目录，但当前仍没有任意命令编辑、队列暂停或视频剪辑。
 - 编码器能力来自启动时的 `ffmpeg -encoders`；更换 FFmpeg 构建后需要重启或重新检测。
 - 输出目录、格式、质量预设和高级设置尚未持久化，关闭应用后需要重新选择；只有转换历史会持久化，最多保留最近 200 条。
-- 整体视觉重做尚未开始；等 M4 验收后按开发者参考调整 M5。
+- M5 视觉重做进行中；动态背景和顶部玻璃 header 已接入，其余等整体视觉参考。
 - 关闭保护有单元测试和主进程接线；原生确认对话框的真实点击流程尚未自动化。
 - “打开文件”和“打开日志目录”的真实系统窗口未在自动化中反复打开；输出路径存在性和 IPC 拒绝路径已测试。
 - 历史记录的打开操作使用历史记录 ID，不复用重启前的队列任务 ID；历史文件损坏时会备份并回退为空列表，不会阻塞启动。

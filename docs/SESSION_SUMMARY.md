@@ -42,6 +42,8 @@
 - 完成/失败/取消只记录一次终态；历史 ID 与队列任务 ID 分离，重启后不复用旧队列 ID；
 - 工作区媒体卡片支持逐项移除；转换进行中的文件禁用移除，移除不会删除原文件；
 - M5 前置：全局 canvas 动态点阵 + 渐变背景，鼠标波光，背景层 `pointer-events-none`，不改变业务布局；
+- M5 前置：顶部 header 半透明玻璃层，`backdrop-blur-xl` + 亮度和饱和度提升 + SVG 噪声位移纹理；玻璃层不拦截交互；
+- 任务队列支持终态任务单独删除和批量清空；运行中任务只能取消，清空不删除输出文件或历史记录；
 - 串行任务队列、进度、取消、失败隔离；
 - 输出临时文件、退出码校验、最终文件非空校验；
 - `_converted` 命名和冲突避让；
@@ -51,13 +53,13 @@
 - FFmpeg/FFprobe、DLL、LICENSE、README 随安装包分发；
 - NSIS 安装包、完整目录 zip、自定义图标；
 - 无系统 PATH 的目录版和安装版真实 E2E；
-- 140 个自动化测试全部通过，无 skip；
+- 141 个自动化测试全部通过，无 skip；
 - README、开发者教程、测试计划、FFmpeg 分发说明、第三方声明、开发日志。
 
 ### 未完成
 
 - M4：已完成转换历史、默认输出目录、命令预览折叠；完成提示音和设置持久化仍属于可选 P1，未开始；
-- M5：整体视觉重做；动态点阵背景已按 `docs/UI.md` 先行接入，其余布局等设计参考；
+- M5：整体视觉重做；动态点阵背景和顶部玻璃 header 已接入，其余布局等设计参考；
 - M6：最终安装包、独立干净 VM 的安装/取消/打开输出/卸载、`SESSION_SUMMARY.md` 最终版、GitHub Release；
 - 代码签名；
 - GPL 合规的最终法律确认；
@@ -87,13 +89,15 @@
 | 环境面板移除 | 普通用户不需要 Electron/Node/FFmpeg 版本；错误时再给操作入口 |
 | 视觉延后 | 先保证功能、格式和交付链，避免视觉返工 |
 | 背景先独立接入 | 只替换 AppShell 的静态背景，保持布局和交互不变，便于验证性能与可读性 |
+| 顶部玻璃适配 | 复用 `docs/顶部.md` 的 SVG 噪声纹理，但用普通 CSS 替代 styled-jsx；保持深色可读性 |
+| 队列清理只动 UI | 删除/清空仅移除终态任务，不删除输出文件，也不清空历史；运行中任务只能取消 |
 
 ## 4. 真实证据
 
 ### 4.1 自动化测试
 
 ```text
-npm test           8 个测试文件，140 个测试全部通过，无 skip
+npm test           8 个测试文件，141 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 ```
@@ -103,7 +107,7 @@ npm run build      main / preload / renderer 构建通过
 - `phase-01-skeleton.test.tsx`：骨架、安全、IPC、日志、启动编排；
 - `phase-02-media.test.tsx`：路径解析、FFprobe、缩略图、导入 UI；
 - `phase-03-conversion.test.tsx`：参数、进度、队列、真实转换、取消；
-- `phase-04-polish.test.tsx`：拖拽、输出操作、关闭保护、快捷键、工作区移除；
+- `phase-04-polish.test.tsx`：拖拽、输出操作、关闭保护、快捷键、工作区移除、队列终态删除/清空；
 - `phase-05-delivery.test.tsx`：随包布局、打包配置、环境面板移除；
 - `phase-06-formats.test.tsx`：能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI；
 - `phase-07-advanced.test.tsx`：高级设置参数、主进程校验、命令预览、速度平滑、队列 telemetry、UI、真实 480p/移除音轨转换；

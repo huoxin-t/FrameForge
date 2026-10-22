@@ -579,6 +579,76 @@ describe('阶段 4 / 体验 UI', () => {
     expect(await actions.findByText('已复制')).toBeInTheDocument();
   });
 
+  it('终态任务可以单独删除或一键清空，运行中的任务保留', async () => {
+    logger.info('STEP 启动完成、已取消和运行中的任务');
+
+    const canceledJob: ConversionJob = {
+      ...completedJob,
+      id: 'job-canceled',
+      status: 'canceled',
+      progress: 0,
+      finishedAt: 200,
+      elapsedMs: 100,
+    };
+    const runningJob: ConversionJob = {
+      ...completedJob,
+      id: 'job-running',
+      status: 'running',
+      progress: 20,
+      finishedAt: null,
+      elapsedMs: null,
+    };
+
+    await renderImportedApp({
+      selectOutputDirectory: vi.fn().mockResolvedValue('C:\\输出 目录'),
+      startConversions: vi
+        .fn()
+        .mockResolvedValue([completedJob, canceledJob, runningJob]),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /选择目录/ }));
+    await screen.findByText('C:\\输出 目录');
+    fireEvent.click(screen.getByRole('button', { name: '开始转换' }));
+    expect(await screen.findByText('已完成')).toBeInTheDocument();
+    expect(await screen.findByText('已取消')).toBeInTheDocument();
+    expect(await screen.findByText('转换中')).toBeInTheDocument();
+
+    const queue = within(screen.getByRole('region', { name: '任务队列' }));
+    const completedCard = queue.getByText('已完成').closest('article');
+    expect(completedCard).not.toBeNull();
+
+    logger.info('STEP 单独删除已完成任务');
+    fireEvent.click(
+      within(completedCard as HTMLElement).getByRole('button', {
+        name: /删除/,
+      }),
+    );
+    expect(queue.queryByText('已完成')).not.toBeInTheDocument();
+    expect(queue.getByText('已取消')).toBeInTheDocument();
+    expect(queue.getByText('转换中')).toBeInTheDocument();
+
+    logger.info('STEP 运行中任务没有删除按钮');
+    const runningCard = queue.getByText('转换中').closest('article');
+    expect(runningCard).not.toBeNull();
+    expect(
+      within(runningCard as HTMLElement).queryByRole('button', {
+        name: /删除/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(runningCard as HTMLElement).getByRole('button', { name: '取消' }),
+    ).toBeInTheDocument();
+
+    logger.info('STEP 清空剩余终态任务，运行中任务保留');
+    fireEvent.click(queue.getByRole('button', { name: '清空' }));
+    expect(queue.queryByText('已取消')).not.toBeInTheDocument();
+    expect(queue.getByText('转换中')).toBeInTheDocument();
+    expect(queue.getByText('1 个任务')).toBeInTheDocument();
+    expect(
+      queue.queryByRole('button', { name: '清空' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('底栏提供打开日志目录的真实入口', async () => {
     logger.info('STEP 点击打开日志目录');
 

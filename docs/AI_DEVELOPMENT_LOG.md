@@ -1537,3 +1537,77 @@ CDP 手工检查                         renderer exceptions=0；高级设置真
 
 - E2E 一次在“高级设置”处超时；独立 CDP 会话证明点击、展开和命令预览都正常，renderer 无异常。原因是选择 MP4 后立即点击高级设置存在时序抖动；E2E 在点击前增加“等待 MP4 格式摘要”，再次完整运行通过。
 - 当前机器执行默认 `npm run dist:dir` 时，electron-builder 解压 Electron 后 rename `win-unpacked.tmp` 报 EPERM；使用 `--config.electronDist=node_modules/electron/dist` 完成打包。该问题是本机文件锁/安全软件层面的构建环境问题，不是应用逻辑；M6 重建安装包时需再次确认。
+
+---
+
+## 2026-10-22 / M5 前置：顶部玻璃 Header
+
+### 需求
+
+开发者提供 `docs/顶部.md`，要求把顶部黑色 header 改成玻璃质感。
+
+### 实现
+
+- 新增 `src/components/HeaderGlass.tsx`，保留参考组件的 SVG `feTurbulence` + `feDisplacementMap` 噪声位移纹理；
+- 原组件的 `style jsx`、`cn`、固定宽度和 `hidden xl:block` 不适合当前 Vite/Electron 页面，改为普通 React + `src/styles/index.css` 的 `.header-glass-texture`，铺满 header；
+- header 使用半透明深色底、`backdrop-blur-xl`、`backdrop-brightness-125`、`backdrop-saturate-150`、顶部高光和内阴影；
+- 玻璃层 `pointer-events-none`；标题和右侧状态内容提升到 `z-10`，不改变任何业务交互；
+- 没有新增依赖。
+
+### 视觉迭代
+
+- 第一版底色过深，截图更像普通半透明黑条；降低底色不透明度、增加顶部白色高光和玻璃纹理强度后，点阵背景能透过模糊层，同时保持状态文字可读；
+- 当前是克制的深色玻璃，不是乳白磨砂；后续做整体主题时再按主题 token 调整。
+
+### 验证
+
+```text
+npm run typecheck                    通过
+npx vitest run                       8 个文件，141/141 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+CDP 手工检查                         header 纹理存在；renderer exceptions=0
+```
+
+截图：`docs/evidence/phase11-header-glass.png`（顶部细节）；`phase6-formats.png`、`phase6-mp3.png`、`phase7-advanced.png`、`phase8-history.png` 已用最终代码重新生成。
+
+### 已知边界
+
+- 玻璃效果仍是深色主题专用，尚未抽成主题 token；
+- 原生窗口启动背景仍是 `#0b0d12`，切白色主题时需要同步修改，否则启动瞬间会闪深色。
+
+---
+
+## 2026-10-22 / M5 前置：任务队列终态清理
+
+### 需求
+
+已完成、失败、已取消任务会一直留在任务队列里，用户无法清理；需要增加清空按钮和单任务删除按钮。
+
+### 实现
+
+- `JobQueue` 统计终态任务数量；有终态任务时在队列标题旁显示“清空”；
+- 每个终态任务卡右上角显示垃圾桶按钮，`aria-label` 包含文件名，`title` 明确说明“从队列删除（不会删除输出文件）”；
+- 运行中/排队中任务不显示删除按钮，仍然只能取消；
+- `App.tsx` 新增 `handleRemoveJob` 和 `handleClearFinishedJobs`，只更新当前 `jobs` 状态：
+  - 单删只移除指定终态任务；
+  - 清空只保留 `queued` / `running`；
+  - 不调用历史清空、文件删除或任何文件系统 IPC；
+- 清空/删除不会影响 `conversion-history.json`，也不会删除已生成输出文件。
+
+### 验证
+
+```text
+npm run typecheck                    通过
+npx vitest run test/phase-04-polish.test.tsx   17/17 通过
+npx vitest run                       8 个文件，141/141 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+```
+
+新增测试覆盖：同时存在已完成、已取消和运行中任务时，单删已完成、清空剩余终态、运行中任务保留且没有删除按钮。`phase6-formats.png` 可见“清空”按钮和终态任务垃圾桶入口。
+
+### 边界
+
+- E2E 未自动点击清空/删除，真实点击路径由 React 测试覆盖；打包版截图用于确认入口可见；
+- 删除仅影响当前会话队列，重启后队列本身不恢复；历史仍由主进程持久化。

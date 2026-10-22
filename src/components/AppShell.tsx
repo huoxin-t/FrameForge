@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Film, FolderOpen, ShieldCheck } from 'lucide-react';
 import type { FfmpegState } from '../types/ui';
 import { CanvasFractalGrid } from './background/CanvasFractalGrid';
+import { HeaderGlass } from './HeaderGlass';
 
 interface AppShellProps {
   version?: string;
@@ -73,8 +74,13 @@ export function AppShell({
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10 bg-[#0b0d12]/25"
       />
-      <header className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#0b0d12]/80 px-6 py-3 backdrop-blur">
-        <div className="flex items-center gap-3">
+      <header className="relative flex shrink-0 items-center justify-between overflow-hidden border-b border-white/10 bg-[#0b0d12]/22 px-6 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_30px_rgba(0,0,0,0.25)] backdrop-blur-xl backdrop-brightness-125 backdrop-saturate-150">
+        <HeaderGlass />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.13] via-white/[0.03] to-transparent"
+        />
+        <div className="relative z-10 flex items-center gap-3">
           <div className="grid size-9 place-items-center rounded-lg border border-amber-300/20 bg-amber-400/10 text-amber-300">
             <Film size={19} aria-hidden="true" />
           </div>
@@ -87,7 +93,7 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs text-slate-400">
+        <div className="relative z-10 flex items-center gap-4 text-xs text-slate-400">
           <span className="inline-flex items-center gap-1.5">
             <ShieldCheck size={14} className="text-emerald-400" aria-hidden="true" />
             本地处理 · 文件不会上传

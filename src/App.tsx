@@ -576,6 +576,26 @@ export default function App() {
     }
   }, []);
 
+  /** 只从当前队列移除终态任务；输出文件和转换历史不动。 */
+  const handleRemoveJob = useCallback((jobId: string) => {
+    setJobs((current) => {
+      const job = current.find((item) => item.id === jobId);
+      if (!job || job.status === 'queued' || job.status === 'running') {
+        return current;
+      }
+      return current.filter((item) => item.id !== jobId);
+    });
+  }, []);
+
+  /** 清空所有终态任务，保留排队中和转换中的任务。 */
+  const handleClearFinishedJobs = useCallback(() => {
+    setJobs((current) =>
+      current.filter(
+        (job) => job.status === 'queued' || job.status === 'running',
+      ),
+    );
+  }, []);
+
   const handleOpenOutputFile = useCallback(async (jobId: string) => {
     const api = window.desktopAPI;
     if (!api) {
@@ -853,6 +873,8 @@ export default function App() {
             onOpenOutputDirectory={handleShowOutputInFolder}
             onCopyError={handleCopyError}
             onOpenLogDirectory={handleOpenLogDirectory}
+            onRemoveJob={handleRemoveJob}
+            onClearFinished={handleClearFinishedJobs}
           />
 
           <HistoryCard

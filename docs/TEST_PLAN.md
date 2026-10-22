@@ -34,7 +34,7 @@ npm run dist:win
 当前基线（2026-10-22）：
 
 ```text
-npm test          8 个测试文件，140 个测试全部通过，无 skip
+npm test          8 个测试文件，141 个测试全部通过，无 skip
 npm run typecheck 通过
 npm run build     main / preload / renderer 构建通过
 npm run dist:dir  目录版构建成功
@@ -327,6 +327,62 @@ CDP 手工检查                         renderer exceptions=0；高级设置正
 
 截图：`docs/evidence/phase6-formats.png`、`phase6-mp3.png`、`phase7-advanced.png`、`phase8-history.png`（均已更新为新背景）。
 
+## 5.5 M5 前置：顶部玻璃 Header
+
+来源：`docs/顶部.md` 的 `DistortedGlass`。
+
+实现要点：
+
+```text
+src/components/HeaderGlass.tsx
+- 使用 SVG feTurbulence + feDisplacementMap 生成噪声位移玻璃纹理
+- 原组件的 style jsx / cn / 固定宽度改造成普通 React + 全局 CSS
+- header 使用半透明深色底、backdrop-blur-xl、亮度和饱和度提升
+- 玻璃层 pointer-events-none；标题和状态内容位于 z-10
+```
+
+真实结果：
+
+```text
+npm run typecheck                    通过
+npm test                             8 个文件，141/141 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+CDP 手工检查                         header 存在纹理；renderer exceptions=0
+```
+
+截图：`docs/evidence/phase11-header-glass.png`（顶部细节）；`phase6-formats.png`、`phase6-mp3.png`、`phase7-advanced.png`、`phase8-history.png` 已更新。
+
+## 5.6 M5 前置：任务队列终态清理
+
+需求：已完成、失败、已取消任务会长期留在任务队列里，没有清理入口；增加终态任务单独删除和批量清空。
+
+实现要点：
+
+```text
+src/components/JobQueue.tsx
+- 有终态任务时在队列标题旁显示“清空”
+- 每个终态任务卡右上角显示垃圾桶按钮
+- 运行中/排队中任务不显示删除按钮，只能取消
+
+src/App.tsx
+- handleRemoveJob 只移除目标终态任务
+- handleClearFinishedJobs 只保留 queued/running
+- 不调用历史清空或文件删除 IPC
+```
+
+真实结果：
+
+```text
+npm run typecheck                    通过
+npm test                             8 个文件，141/141 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+UI 截图                              phase6-formats.png 可见“清空”和终态任务垃圾桶入口
+```
+
+清空/删除只改变当前会话队列，不删除输出文件，也不清空转换历史。
+
 ## 6. 手工 / 未自动化项
 
 | 项目 | 原因 | 当前证据 |
@@ -356,7 +412,10 @@ CDP 手工检查                         renderer exceptions=0；高级设置正
 - 清空历史时删除真实输出文件；
 - 用户手动选择输出目录后，后续导入又把它覆盖回源目录；
 - 命令预览无法独立折叠，或折叠状态影响高级设置本身；
-- 全局背景拦截点击/拖拽，或点阵/渐变导致正文不可读；\n- 转换进行中的媒体仍可被移出工作区，或移除时误删原文件；
+- 全局背景拦截点击/拖拽，或点阵/渐变导致正文不可读；
+- 顶部玻璃纹理拦截点击，或玻璃层导致标题/状态文字不可读；
+- 终态任务删除/清空误删输出文件或历史，或清空时移除 queued/running 任务；
+- 转换进行中的媒体仍可被移出工作区，或移除时误删原文件；
 - 无音轨 MP3 仍启动 FFmpeg 或显示为可用；
 - 失败任务被标记为完成；
 - 主界面重新出现 Electron/Node/FFmpeg 版本或路径面板；
