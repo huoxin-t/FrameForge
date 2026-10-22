@@ -5,11 +5,20 @@ import { MediaCard } from './MediaCard';
 interface MediaListProps {
   items: MediaItem[];
   onImport: () => void;
+  onRemove: (item: MediaItem) => void;
+  activeSourcePaths: ReadonlySet<string>;
   importing: boolean;
   disabled: boolean;
 }
 
-export function MediaList({ items, onImport, importing, disabled }: MediaListProps) {
+export function MediaList({
+  items,
+  onImport,
+  onRemove,
+  activeSourcePaths,
+  importing,
+  disabled,
+}: MediaListProps) {
   return (
     <section>
       <div className="mb-4 flex items-end justify-between gap-4">
@@ -37,7 +46,12 @@ export function MediaList({ items, onImport, importing, disabled }: MediaListPro
 
       <div className="space-y-3">
         {items.map((item) => (
-          <MediaCard key={item.path} item={item} />
+          <MediaCard
+            key={item.path}
+            item={item}
+            onRemove={onRemove}
+            removeDisabled={activeSourcePaths.has(item.path.toLowerCase())}
+          />
         ))}
       </div>
 

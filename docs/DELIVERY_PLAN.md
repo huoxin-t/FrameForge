@@ -321,7 +321,7 @@ flowchart TD
 
 **验收证据：**
 
-- `npm test` 8 个文件、138 个测试全部通过，无 skip；
+- `npm test` 8 个文件、140 个测试全部通过，无 skip；
 - 真实历史 JSON 写入、跨实例恢复、损坏备份、200 条上限和终态去重；
 - 打包版无 PATH E2E：4 条完成记录落盘，重启恢复 4 条，清空后 0 条，4 个输出文件仍存在；
 - 截图 `docs/evidence/phase8-history.png`，日志 `test-results/phase8-e2e.log`。
@@ -498,7 +498,7 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 
 | 项目 | 状态 | 证据 |
 |---|---|---|
-| 阶段 4 功能 UX | 已完成 | `docs/AI_DEVELOPMENT_LOG.md`、8 个文件 138 个测试、打包 E2E |
+| 阶段 4 功能 UX | 已完成 | `docs/AI_DEVELOPMENT_LOG.md`、8 个文件 140 个测试、打包 E2E |
 | P0/P1 范围确认 | 已完成（文档） | 本文件 |
 | P0-1 FFmpeg 随包 | 已完成 | `resources/ffmpeg/win32-x64/`、`docs/FFMPEG.md`、无 PATH E2E `source: bundled` |
 | P0-2 安装包/便携包 | 已完成（M1 基线） | `release/FrameForge Setup 0.1.0.exe`、`release/FrameForge-0.1.0-win.zip`、自定义图标、zip 解压 E2E |
@@ -512,7 +512,7 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 | P1-4 动态 ETA | 已完成 | 真实 `speed` 解析、5 样本平滑、任务 UI 已用/剩余/速度、取消后清除 |
 | M4 转换历史 | 已完成 | 主进程 JSON 原子持久化、终态去重、200 条上限、重启恢复、清空不删输出、打包 E2E |
 | M4 默认输出目录 | 已完成 | 首次导入使用首个有效源目录，手动选择后不被覆盖 |
-| M4 命令预览折叠 | 已完成 | 高级设置内部独立展开/折叠，默认展开，测试与 E2E 覆盖 |
+| M4 命令预览折叠 | 已完成 | 高级设置内部独立展开/折叠，默认展开，测试与 E2E 覆盖 |\n| M4 工作区移除 | 已完成 | 逐项移除、空状态回收、转换中禁用；不删除原文件 |
 | P1-5 完成提示音 | 未开始（可选） | 不属于 M4 阻塞范围 |
 | P1-6 设置持久化 | 未开始（可选） | 当前只有转换历史持久化 |
 | 视觉方向 | 未开始 | 等 M4 验收后按开发者参考调整 M5 |

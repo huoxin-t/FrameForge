@@ -602,4 +602,73 @@ describe('阶段 4 / 体验 UI', () => {
       expect(selectVideos).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('可以从工作区逐项移除视频，移除最后一项后回到空状态', async () => {
+    logger.info('STEP 导入两个视频');
+
+    const secondMetadata: MediaMetadata = {
+      ...sampleMetadata,
+      path: 'C:\\视频 样本\\第二个 视频.mp4',
+      fileName: '第二个 视频.mp4',
+    };
+    const secondItem: MediaItem = {
+      ...sampleItem,
+      path: secondMetadata.path,
+      fileName: secondMetadata.fileName,
+      metadata: secondMetadata,
+    };
+    await renderReadyApp({
+      selectVideos: vi.fn().mockResolvedValue([sampleItem, secondItem]),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /导入视频/ }));
+    expect(await screen.findByText('测试 视频.mp4')).toBeInTheDocument();
+    expect(screen.getByText('第二个 视频.mp4')).toBeInTheDocument();
+    expect(
+      screen.getByText('已导入 2 个视频 · 拖入更多文件可继续添加'),
+    ).toBeInTheDocument();
+
+    logger.info('STEP 移除第一个视频，另一个仍保留');
+    fireEvent.click(
+      screen.getByRole('button', { name: '从工作区移除 测试 视频.mp4' }),
+    );
+    expect(screen.queryByText('测试 视频.mp4')).not.toBeInTheDocument();
+    expect(screen.getByText('第二个 视频.mp4')).toBeInTheDocument();
+    expect(
+      screen.getByText('已导入 1 个视频 · 拖入更多文件可继续添加'),
+    ).toBeInTheDocument();
+
+    logger.info('STEP 移除最后一项并回到空状态');
+    fireEvent.click(
+      screen.getByRole('button', { name: '从工作区移除 第二个 视频.mp4' }),
+    );
+    expect(await screen.findByText('还没有导入视频')).toBeInTheDocument();
+    expect(screen.queryByText(/已导入 0 个视频/)).not.toBeInTheDocument();
+  });
+
+  it('转换进行中时禁用从工作区移除', async () => {
+    logger.info('STEP 启动一个仍在转换的任务');
+
+    const runningJob: ConversionJob = {
+      ...completedJob,
+      id: 'job-running',
+      status: 'running',
+      progress: 20,
+      finishedAt: null,
+      elapsedMs: null,
+    };
+    await renderImportedApp({
+      startConversions: vi.fn().mockResolvedValue([runningJob]),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '开始转换' }));
+    expect(await screen.findByText('转换中')).toBeInTheDocument();
+
+    logger.info('STEP 断言移除按钮被禁用且说明原因');
+    const removeButton = screen.getByRole('button', {
+      name: '从工作区移除 测试 视频.mp4',
+    });
+    expect(removeButton).toBeDisabled();
+    expect(removeButton).toHaveAttribute('title', '转换进行中，暂不能移除');
+  });
 });

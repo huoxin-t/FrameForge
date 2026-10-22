@@ -34,7 +34,7 @@ npm run dist:win
 当前基线（2026-10-22）：
 
 ```text
-npm test          8 个测试文件，138 个测试全部通过，无 skip
+npm test          8 个测试文件，140 个测试全部通过，无 skip
 npm run typecheck 通过
 npm run build     main / preload / renderer 构建通过
 npm run dist:dir  目录版构建成功
@@ -48,7 +48,7 @@ npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 + 高级设置 + 历史�
 | `test/phase-01-skeleton.test.tsx` | Electron 骨架、安全边界、IPC 契约、日志、启动编排 |
 | `test/phase-02-media.test.tsx` | 路径解析、FFprobe、缩略图、导入 UI、FFmpeg 状态 |
 | `test/phase-03-conversion.test.tsx` | 参数、进度、串行队列、真实 MP4/MKV、取消、失败清理 |
-| `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、任务 UI |
+| `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、工作区移除、任务 UI |
 | `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 |
 | `test/phase-06-formats.test.tsx` | 编码器能力矩阵、WebM/MP3 参数、输出 profile 校验、队列音频拒绝、真实输出、UI |
 | `test/phase-07-advanced.test.tsx` | 分辨率/CRF/音频码率/音频模式、主进程校验、命令预览、speed/ETA、队列 telemetry、UI、真实高级转换 |
@@ -270,7 +270,7 @@ test/phase-08-history.test.tsx
 真实结果：
 
 ```text
-npm test                         8 个文件，138/138 通过，无 skip
+npm test                         8 个文件，140/140 通过，无 skip
 默认输出目录                     ...\输入 样本
 历史落盘                         conversion-history.json，4 条 completed
 重启后恢复                       4 条，右侧栏显示 4 条已完成
@@ -279,6 +279,26 @@ npm test                         8 个文件，138/138 通过，无 skip
 ```
 
 截图：`docs/evidence/phase8-history.png`（重启后从 `userData` 恢复的历史卡片）。
+
+## 5.3 工作区移除补丁
+
+自动化覆盖：
+
+```text
+test/phase-04-polish.test.tsx
+- 导入两项后逐项移除，计数从 2 → 1 → 空状态
+- 移除只影响工作区列表，不调用文件删除 API
+- 转换进行中（queued/running）禁用移除，并显示原因
+```
+
+真实结果：
+
+```text
+npx vitest run test/phase-04-polish.test.tsx   16/16 通过
+npm test                                        8 个文件，140/140 通过，无 skip
+```
+
+RED/GREEN 日志：`test-results/phase9-workspace-remove-red.log`、`phase9-workspace-remove-green.log`。
 
 ## 6. 手工 / 未自动化项
 
@@ -308,7 +328,7 @@ npm test                         8 个文件，138/138 通过，无 skip
 - 历史记录把 queued/running 中间态写入，或重启后丢失全部完成/失败/取消记录；
 - 清空历史时删除真实输出文件；
 - 用户手动选择输出目录后，后续导入又把它覆盖回源目录；
-- 命令预览无法独立折叠，或折叠状态影响高级设置本身；
+- 命令预览无法独立折叠，或折叠状态影响高级设置本身；\n- 转换进行中的媒体仍可被移出工作区，或移除时误删原文件；
 - 无音轨 MP3 仍启动 FFmpeg 或显示为可用；
 - 失败任务被标记为完成；
 - 主界面重新出现 Electron/Node/FFmpeg 版本或路径面板；

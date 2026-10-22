@@ -75,6 +75,15 @@ export default function App() {
   const hasActiveJobs = jobs.some(
     (job) => job.status === 'queued' || job.status === 'running',
   );
+  const activeSourcePaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const job of jobs) {
+      if (job.status === 'queued' || job.status === 'running') {
+        paths.add(job.sourcePath.toLowerCase());
+      }
+    }
+    return paths;
+  }, [jobs]);
   const previewItem = convertibleItems[0] ?? null;
   const commandPreview = useMemo(() => {
     if (!previewItem?.metadata) {
@@ -316,6 +325,22 @@ export default function App() {
       }
     }
   }, []);
+
+  const handleRemoveItem = useCallback(
+    (item: MediaItem) => {
+      if (activeSourcePaths.has(item.path.toLowerCase())) {
+        return;
+      }
+
+      setItems((current) =>
+        current.filter(
+          (candidate) =>
+            candidate.path.toLowerCase() !== item.path.toLowerCase(),
+        ),
+      );
+    },
+    [activeSourcePaths],
+  );
 
   const handleImport = useCallback(async () => {
     const api = window.desktopAPI;
@@ -782,6 +807,8 @@ export default function App() {
             <MediaList
               items={items}
               onImport={handleImport}
+              onRemove={handleRemoveItem}
+              activeSourcePaths={activeSourcePaths}
               importing={importing}
               disabled={!canImport}
             />

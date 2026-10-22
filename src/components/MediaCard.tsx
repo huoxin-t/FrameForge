@@ -1,4 +1,4 @@
-import { Film } from 'lucide-react';
+import { Film, Trash2 } from 'lucide-react';
 import type { MediaItem } from '../../shared/media';
 import {
   formatDuration,
@@ -9,9 +9,15 @@ import {
 
 interface MediaCardProps {
   item: MediaItem;
+  onRemove: (item: MediaItem) => void;
+  removeDisabled: boolean;
 }
 
-export function MediaCard({ item }: MediaCardProps) {
+export function MediaCard({
+  item,
+  onRemove,
+  removeDisabled,
+}: MediaCardProps) {
   const metadata = item.metadata;
 
   return (
@@ -41,15 +47,32 @@ export function MediaCard({ item }: MediaCardProps) {
               {item.path}
             </p>
           </div>
-          <span
-            className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${
-              item.error
-                ? 'border-rose-400/20 bg-rose-400/10 text-rose-300'
-                : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
-            }`}
-          >
-            {item.error ? '读取失败' : '已读取'}
-          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span
+              className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${
+                item.error
+                  ? 'border-rose-400/20 bg-rose-400/10 text-rose-300'
+                  : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+              }`}
+            >
+              {item.error ? '读取失败' : '已读取'}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemove(item)}
+              disabled={removeDisabled}
+              aria-label={`从工作区移除 ${item.fileName}`}
+              title={
+                removeDisabled
+                  ? '转换进行中，暂不能移除'
+                  : '从工作区移除（不会删除原文件）'
+              }
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded border border-white/5 px-1.5 text-[10px] text-slate-500 transition hover:border-rose-400/20 hover:bg-rose-400/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/5 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+            >
+              <Trash2 size={12} aria-hidden="true" />
+              移除
+            </button>
+          </div>
         </div>
 
         {item.error ? (

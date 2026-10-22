@@ -1470,3 +1470,37 @@ source: bundled
 - 当前 `release/win-unpacked` 已包含 M4；安装包和 zip 仍是 M1 基线；
 - 代码签名、GPL 合规法律确认、独立干净 VM 仍未完成；
 - AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。
+
+---
+
+## 2026-10-22 / M4 补丁：工作区移除
+
+### 问题
+
+开发者反馈：视频加入工作区后只能继续添加，无法移除已导入项。
+
+### 测试先行
+
+在 `test/phase-04-polish.test.tsx` 增加 2 个用例：
+
+- 导入两项后逐项移除，计数从 2 → 1 → 空状态；
+- 转换进行中（running）禁用移除按钮并显示原因。
+
+RED：`test-results/phase9-workspace-remove-red.log`，真实失败为找不到 `从工作区移除 测试 视频.mp4` 按钮。
+
+### 实现
+
+- `MediaCard`：状态徽标旁增加“移除”按钮，aria-label 为 `从工作区移除 <文件名>`；
+- `MediaList`：接收移除回调和活跃源路径集合；
+- `App`：`activeSourcePaths` 从 queued/running 任务派生；移除只更新 `items`，不调用文件删除 API；有活跃任务时忽略移除；
+- 移除最后一项后自动回到空状态，重新导入仍可恢复。
+
+### 结果
+
+```text
+npx vitest run test/phase-04-polish.test.tsx   16/16 通过
+npm test                                        8 个文件，140/140 通过，无 skip
+npm run typecheck                              通过
+```
+
+GREEN：`test-results/phase9-workspace-remove-green.log`，全量：`test-results/phase9-full-suite.log`。

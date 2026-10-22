@@ -40,6 +40,7 @@
 - 右侧栏转换历史保留完成/失败/取消终态，主进程 `userData/conversion-history.json` 原子持久化，重启恢复，最近 200 条；
 - 历史支持筛选、打开文件/文件夹、复制错误、二次确认清空；清空历史不删除输出文件；
 - 完成/失败/取消只记录一次终态；历史 ID 与队列任务 ID 分离，重启后不复用旧队列 ID；
+- 工作区媒体卡片支持逐项移除；转换进行中的文件禁用移除，移除不会删除原文件；
 - 串行任务队列、进度、取消、失败隔离；
 - 输出临时文件、退出码校验、最终文件非空校验；
 - `_converted` 命名和冲突避让；
@@ -49,7 +50,7 @@
 - FFmpeg/FFprobe、DLL、LICENSE、README 随安装包分发；
 - NSIS 安装包、完整目录 zip、自定义图标；
 - 无系统 PATH 的目录版和安装版真实 E2E；
-- 138 个自动化测试全部通过，无 skip；
+- 140 个自动化测试全部通过，无 skip；
 - README、开发者教程、测试计划、FFmpeg 分发说明、第三方声明、开发日志。
 
 ### 未完成
@@ -90,7 +91,7 @@
 ### 4.1 自动化测试
 
 ```text
-npm test           8 个测试文件，138 个测试全部通过，无 skip
+npm test           8 个测试文件，140 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 ```
@@ -100,7 +101,7 @@ npm run build      main / preload / renderer 构建通过
 - `phase-01-skeleton.test.tsx`：骨架、安全、IPC、日志、启动编排；
 - `phase-02-media.test.tsx`：路径解析、FFprobe、缩略图、导入 UI；
 - `phase-03-conversion.test.tsx`：参数、进度、队列、真实转换、取消；
-- `phase-04-polish.test.tsx`：拖拽、输出操作、关闭保护、快捷键；
+- `phase-04-polish.test.tsx`：拖拽、输出操作、关闭保护、快捷键、工作区移除；
 - `phase-05-delivery.test.tsx`：随包布局、打包配置、环境面板移除；
 - `phase-06-formats.test.tsx`：能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI；
 - `phase-07-advanced.test.tsx`：高级设置参数、主进程校验、命令预览、速度平滑、队列 telemetry、UI、真实 480p/移除音轨转换；
