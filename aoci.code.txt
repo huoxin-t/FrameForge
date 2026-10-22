@@ -1,1 +1,128 @@
 #AOCI-CODE-VOLUME: 1
+
+===D:/projecct/2026/vedio/===
+.gitattributes[CG3T]: F:统一仓库文本行尾为 LF，保证跨平台检出字节一致 | R:- | A:- | S:AOCI 基线按原始字节比对，autocrlf 重写会让整棵树被判为 stale
+.gitignore[CG5T]: F:排除依赖、构建产物、测试产物与本机 FFmpeg 资源 | R:code:scripts/prepare-ffmpeg.mjs,code:electron/main/services/ffmpeg/layout.ts | A:- | S:resources/ffmpeg 与 opencode.json 必须保持本机化，提交后会让随包解析或 MCP 接入误用错误路径
+AGENTS.md[SG8S]: F:规定 AOCI 仓库认知的建立、复用、维护与收尾规则 | R:- | A:aoci_rules,aoci_overview,aoci_maintain,aoci_update_entry,aoci_report | S:本文件只承载接入与收尾原则，实时 Guide、工具 Schema 与 Spec 才是执行权威，不能据此重建状态机
+README.md[SG7M]: F:总览 FrameForge 的功能、运行方式、安全边界与交付证据 | R:code:docs/DEVELOPER_GUIDE.md,code:docs/DELIVERY_PLAN.md,code:docs/TEST_PLAN.md,code:docs/FFMPEG.md,code:THIRD_PARTY_NOTICES.md,code:package.json | A:npm run dev,npm test,npm run typecheck,npm run build,npm run dist:win,npm run e2e:packaged | S:preload 方法数、功能状态、测试数字与 AOCI 条目数在多份文档重复，改接口或阶段结论时必须同步 README、DEVELOPER_GUIDE 与 TEST_PLAN
+THIRD_PARTY_NOTICES.md[SV6T]: F:声明随包第三方组件、版本、许可证与源码获取方式 | R:code:docs/FFMPEG.md,code:package.json,code:scripts/prepare-ffmpeg.mjs | A:- | S:FFmpeg 为 GPLv3 构建，分发时必须保留 LICENSE、README 与源码提供方式，且版本和构建参数必须与随包二进制一致
+electron.vite.config.ts[FV6T]: F:配置主进程、preload 与 renderer 的 electron-vite 构建 | R:code:package.json,code:electron/main/index.ts,code:electron/preload/index.ts,code:index.html | A:electron-vite defineConfig | S:preload 固定输出 CJS 的 [name].js；@renderer 指向 src，@shared 指向 shared，renderer 根目录是仓库根
+index.html[EU4T]: F:提供 renderer 的 HTML 挂载入口 | R:code:src/main.tsx,code:electron.vite.config.ts | A:#root | S:Vite 以仓库根为 renderer root，入口脚本必须是 /src/main.tsx，挂载点必须是 #root
+package-lock.json[FV6L]: F:锁定完整依赖树与版本 | R:code:package.json | A:lockfileVersion 3 | S:由 npm 生成，只能通过 npm install 更新；不要手改；缺失或版本不一致会破坏可复现安装
+package.json[FV9T]: F:定义项目脚本、依赖、Electron 打包与随包资源 | R:code:electron.vite.config.ts,code:scripts/prepare-ffmpeg.mjs,code:scripts/e2e-packaged.mjs,code:THIRD_PARTY_NOTICES.md,code:docs/FFMPEG.md | A:npm run dev,npm run build,npm test,npm run typecheck,npm run prepare:ffmpeg,npm run e2e:packaged | S:main 指向 out/main/index.js；extraResources 把 resources/ffmpeg 映射为 ffmpeg 并复制第三方声明；win 只出 nsis 和 zip x64；asar 开启；Node 要求 ≥22.12
+tsconfig.json[FV7T]: F:定义全仓库 TypeScript 编译与类型检查边界 | R:code:package.json,code:electron.vite.config.ts,code:vitest.config.mts | A:strict,noEmit,moduleResolution Bundler,jsx react-jsx | S:strict 与 noUnused* 全开；noEmit 只做类型检查；include 覆盖 electron/shared/src/test 与根配置；exclude out/release
+vitest.config.mts[FQ6T]: F:配置 Vitest 的 jsdom、别名、串行执行与日志 | R:code:test/setup.ts,code:package.json,code:tsconfig.json | A:defineConfig,fileParallelism,setupFiles,include | S:环境 jsdom；alias @shared/@renderer；fileParallelism=false 避免日志交错；只跑 test/phase-*.test；restoreMocks/clearMocks 开启；verbose 保留 STEP 日志
+
+===D:/projecct/2026/vedio/docs/===
+AI_CODING_PROMPT.md[XG4S]: F:分阶段指导编码模型交付 FrameForge 的提示词模板 | R:code:docs/PROJECT_SPEC.md,code:docs/AI_DEVELOPMENT_LOG.md | A:- | S:它是执行提示词而非需求基线，范围与验收以 PROJECT_SPEC 为准，不能把阶段指令当成新增需求
+AI_DEVELOPMENT_LOG.md[SG7L]: F:记录真实执行过的 AI 开发命令、决策与结果 | R:code:docs/PROJECT_SPEC.md,code:docs/TEST_PLAN.md,code:docs/SESSION_SUMMARY.md | A:- | S:只写真实命令和观察结果；未执行的测试必须标未执行，不能把推断或计划写成已通过
+DELIVERY_PLAN.md[SV7L]: F:定义 P0/P1 范围、里程碑顺序与验收标准 | R:code:docs/PROJECT_SPEC.md,code:README.md,code:docs/TEST_PLAN.md | A:M0-M6 里程碑验收 | S:PROJECT_SPEC 是需求底线，本文件只定义阶段 4 之后的优先级；状态板必须对应真实证据，不能把计划写成已完成
+DEVELOPER_GUIDE.md[SG8L]: F:按真实调用链讲解 FrameForge 的实现与安全边界 | R:code:electron/main/index.ts,code:electron/main/ipc/handlers.ts,code:electron/main/services/conversion/queue.ts,code:shared/conversion-args.ts,code:src/App.tsx | A:按导入、探测、缩略图、转换、队列、UI 组织的 1-16 节阅读地图 | S:只把已实现行为写成已实现，M5/M6 计划必须标待完成；测试数字和阶段状态要与 README、TEST_PLAN 同步
+FFMPEG.md[SV7M]: F:说明 FFmpeg/FFprobe 的解析顺序、随包分发与许可证 | R:code:scripts/prepare-ffmpeg.mjs,code:electron/main/services/ffmpeg/resolver.ts,code:electron/main/services/ffmpeg/layout.ts,code:package.json,code:THIRD_PARTY_NOTICES.md | A:FRAMEFORGE_FFMPEG_DIR,FRAMEFORGE_FFMPEG_SOURCE | S:候选目录必须同时有 ffmpeg 和 ffprobe；shared build 必须整组复制 DLL；GPLv3 分发需保留许可证和源码提供方式
+LOGGING.md[SO6S]: F:规定主进程、渲染层、测试与脚本的日志和主函数编排 | R:code:electron/main/index.ts,code:electron/main/orchestrator.ts,code:electron/main/services/logger.ts,code:electron/main/services/logger-core.ts,code:test/setup.ts,code:vitest.config.mts | A:createLogger(scope) | S:main() 只负责顺序、依赖组装和顶层错误；日志必须包含函数名、关键输入与原始错误，渲染层不能直接使用 Node 日志库
+PROJECT_SPEC.md[SG8L]: F:定义 FrameForge 的产品目标、功能规格与验收底线 | R:code:docs/DELIVERY_PLAN.md,code:docs/TEST_PLAN.md,code:docs/DEVELOPER_GUIDE.md | A:F1-F7 功能验收 | S:它是需求底线，DELIVERY_PLAN 只定义阶段 4 之后的优先级，不能反向覆盖本规格
+SESSION_SUMMARY.md[SG6M]: F:总结会话目标、完成度、关键决策与真实证据 | R:code:README.md,code:docs/AI_DEVELOPMENT_LOG.md,code:docs/TEST_PLAN.md,code:docs/DELIVERY_PLAN.md | A:- | S:完成项必须有真实命令或产物支撑，未完成项要单列；测试数字与 README、TEST_PLAN 保持一致
+TEST_PLAN.md[SQ7L]: F:列出自动化、真实 FFmpeg 集成、打包 E2E 与未覆盖项 | R:code:test/phase-01-skeleton.test.tsx,code:test/phase-02-media.test.tsx,code:test/phase-03-conversion.test.tsx,code:test/phase-04-polish.test.tsx,code:test/phase-06-formats.test.tsx,code:test/phase-07-advanced.test.tsx,code:test/phase-08-history.test.tsx | A:npm test,npm run typecheck,npm run build,npm run e2e:packaged | S:能自动化的必须真实执行；不能自动化的明确标手工或未验证，不能用开发机 PATH 或 mock 结果代替干净机器验收
+UI.md[SU5L]: F:提供动态点阵背景与文字动效的参考实现 | R:code:src/components/background/CanvasFractalGrid.tsx | A:CanvasFractalGridProps | S:这是参考源码而不是应用入口；移植时需去掉 shadcn 别名和 Next.js 假设，并保留背景层 pointer-events-none
+顶部.md[SU4M]: F:提供顶部失真玻璃 header 的参考实现与用法 | R:code:src/components/HeaderGlass.tsx | A:DistortedGlass | S:参考代码用 styled-jsx 与 @/lib/utils，移植版改用普通 React 和全局 CSS；玻璃层需 pointer-events-none
+
+===D:/projecct/2026/vedio/electron/main/===
+index.ts[EW8S]: F:Electron 主进程启动、窗口创建与生命周期装配 | R:code:electron/main/orchestrator.ts,code:electron/main/ipc/handlers.ts,code:electron/main/security.ts,code:electron/main/services/close-guard.ts,code:electron/main/services/conversion/queue.ts,code:electron/main/services/logger.ts,code:electron/main/window-options.ts | A:- | S:main() 只做依赖装配，启动顺序由 runMain 固定；registerIpcHandlers 返回的队列必须保存，close guard 依赖 hasActiveJobs，确认退出后先 cancelAll 再 waitForIdle 最后才 close
+orchestrator.ts[AW6T]: F:按固定顺序执行应用启动依赖 | R:code:electron/main/index.ts | A:runMain,MainDependencies | S:顺序必须是 logger→IPC→窗口→生命周期；测试通过依赖注入验证该顺序，不能把步骤合并到 main()
+security.ts[CS7T]: F:限制窗口导航并拒绝新窗口 | R:code:electron/main/index.ts | A:isAllowedNavigation,hardenWindow | S:只允许同源且同 pathname 的导航；setWindowOpenHandler 一律 deny；非法 URL 解析失败也必须阻止
+window-options.ts[FS7T]: F:构造安全的主窗口 BrowserWindow 选项 | R:code:electron/main/index.ts,code:electron.vite.config.ts | A:createWindowOptions,WindowOptionsInput | S:contextIsolation 开、nodeIntegration 关、sandbox 开、webSecurity 开；打包后关闭 devTools；show 为 false 等 ready-to-show
+
+===D:/projecct/2026/vedio/electron/main/ipc/===
+guard.ts[CS6T]: F:校验 IPC 调用方是否为当前主窗口 | R:code:electron/main/ipc/handlers.ts | A:isTrustedSender(senderId,trustedWebContentsId) | S:trustedWebContentsId 为 null 时必须拒绝所有调用，不能退化为只比较非空 id
+handlers.ts[IW8M]: F:注册受控 IPC 并装配主进程服务依赖 | R:code:shared/ipc.ts,code:electron/main/services/conversion/queue.ts,code:electron/main/services/conversion/validation.ts,code:electron/main/services/history/store.ts,code:electron/main/services/media/media-service.ts,code:electron/main/services/ffmpeg/status.ts | A:registerIpcHandlers,IpcServices,RegisteredIpcHandlers | S:每个 handler 必须先 assertTrusted；重注册前 removeHandler；打开输出只接受任务或历史 ID，不能接受任意路径；preload 只暴露受控方法
+
+===D:/projecct/2026/vedio/electron/main/services/===
+app-info.ts[CG4T]: F:把运行时版本信息组装为应用信息契约 | R:code:shared/ipc.ts,code:electron/main/ipc/handlers.ts | A:buildAppInfo,AppInfoSource,RuntimeVersions | S:name 固定为 FrameForge；electron/chrome 版本缺失时显示“未知”，node 版本必须存在
+close-guard.ts[AR6T]: F:在仍有任务时拦截关闭并等待清理完成 | R:code:electron/main/index.ts,code:electron/main/services/conversion/queue.ts | A:createCloseGuard,CloseGuardDependencies,CloseEventLike | S:有活动任务时必须先 preventDefault 再询问；prompting 防止重复弹窗；确认后先 cancelAll 再 waitForIdle，最后 closeWindow
+logger-core.ts[RO5T]: F:提供带作用域前缀的日志接口 | R:code:electron/main/services/logger.ts | A:createScopedLogger,LogTransport,ScopedLogger | S:transport 收到前缀、消息和上下文；未提供上下文时用空字符串；这里不做级别过滤或格式化
+logger.ts[RO6T]: F:配置 electron-log 并创建主进程 logger | R:code:electron/main/services/logger-core.ts,code:electron/main/index.ts,code:docs/LOGGING.md | A:createLogger,getLogFilePath,Logger | S:文件级别 info 且 5MB 轮转；控制台开发 debug、生产 info；未捕获异常只记录不弹窗；renderer 不能直接导入 electron-log
+
+===D:/projecct/2026/vedio/electron/main/services/conversion/===
+args.ts[LB6T]: F:把共享转换参数构造函数暴露给主进程 | R:code:shared/conversion-args.ts,code:electron/main/services/conversion/runner.ts | A:buildConversionArgs,formatCommandForDisplay,getFormatExtension,ConversionArgsError,BuildConversionArgsOptions | S:这里只做 re-export，参数语义在 shared/conversion-args.ts；主进程执行与 renderer 预览必须共用同一实现
+output-actions.ts[DR6T]: F:校验已完成任务后打开或定位输出文件 | R:code:shared/conversion.ts,code:electron/main/ipc/handlers.ts | A:openCompletedOutput,revealCompletedOutput,OutputActionError,OpenableOutput,OutputActionDependencies | S:只接受 completed 且 outputPath 非空的任务；打开前必须重新检查文件存在；renderer 不能传任意路径
+output.ts[DR7S]: F:生成不覆盖的输出名并校验输出目录与临时文件 | R:code:shared/conversion.ts,code:electron/main/services/conversion/queue.ts,code:electron/main/services/conversion/runner.ts | A:buildOutputPath,findUniqueOutputPath,validateOutputDirectory,buildTemporaryOutputPath,pathExists,getOutputBaseName | S:attempt=0 为 _converted，之后为 _converted (N)；扩展名只由输出格式决定；临时文件必须保留目标扩展名，FFmpeg 才能选对 muxer
+progress.ts[KO7M]: F:解析 FFmpeg 进度行并估算速度与剩余时间 | R:code:electron/main/services/conversion/runner.ts,code:electron/main/services/conversion/queue.ts | A:parseProgressLine,parseTimecodeToMs,parseSpeed,SpeedEstimator,FfmpegProgressParser,ProgressTelemetry | S:out_time_us 与 out_time_ms 都按微秒处理；进度最多 99%，100% 只能由成功校验设置；ETA 至少两个 speed 样本才显示
+queue.ts[AW9L]: F:串行调度转换任务并维护任务状态机 | R:code:electron/main/services/conversion/runner.ts,code:electron/main/services/conversion/output.ts,code:electron/main/services/media/probe.ts,code:electron/main/services/ffmpeg/status.ts,code:shared/conversion.ts,code:electron/main/services/logger.ts,code:electron/main/ipc/handlers.ts | A:ConversionQueue,createConversionQueue,ConversionQueueError,SourceValidation,ConversionQueueDependencies | S:同一时刻只允许一个 FFmpeg 进程；失败或取消不阻塞后续任务；取消必须 abort 真实子进程；按小写路径去重且一次最多 100 个；输出名预留避免并发冲突；onTerminal 每个任务只触发一次；成功前进度不超过 99%
+runner.ts[DR9M]: F:执行单个 FFmpeg 转换并验证输出与清理临时文件 | R:code:electron/main/services/conversion/args.ts,code:electron/main/services/conversion/progress.ts,code:electron/main/services/conversion/output.ts,code:electron/main/services/media/probe.ts,code:electron/main/services/ffmpeg/process.ts,code:electron/main/services/ffmpeg/status.ts | A:ConversionRunner,createConversionRunner,ConversionError,ConversionCanceledError,assertOutputMatchesProfile | S:先写同目录临时文件，成功后才改名；改名前后都要检查非空且不覆盖已有文件；必须用 ffprobe 校验容器、编码和轨道；失败或取消要删除输出和临时文件
+validation.ts[DS7S]: F:校验转换请求、任务 ID 与剪贴板文本 | R:code:electron/main/ipc/handlers.ts,code:shared/conversion.ts | A:parseStartConversionsRequest,parseJobId,parseClipboardText,ConversionRequestError,MAX_CLIPBOARD_TEXT_LENGTH | S:renderer 输入不可信；源路径与输出目录必须是绝对路径且最多 100 个；高级设置省略时用默认值，显式字段必须合法；MP3 不能移除音轨
+
+===D:/projecct/2026/vedio/electron/main/services/ffmpeg/===
+capabilities.ts[IB7S]: F:检测并缓存 FFmpeg 编码器能力 | R:code:electron/main/services/ffmpeg/status.ts,code:electron/main/services/ffmpeg/process.ts,code:shared/capabilities.ts,code:electron/main/ipc/handlers.ts | A:FfmpegCapabilityService,FfmpegCapabilityServiceDependencies,getCapabilities | S:真实执行 ffmpeg -hide_banner -encoders；FFmpeg 不可用或失败时返回全 false 且错误缓存不会永久生效；并发请求共享 pending，refresh 绕过缓存
+layout.ts[RV6T]: F:计算随包 FFmpeg 目录候选 | R:code:electron/main/services/ffmpeg/resolver.ts,code:scripts/prepare-ffmpeg.mjs,code:package.json | A:getPlatformArchDirectoryName,getBundledFfmpegDirectories,FfmpegLayoutOptions | S:新布局 <platform>-<arch> 优先，旧平铺布局仍兼容；打包用 resourcesPath，开发用 appPath/resources；候选按小写去重
+process.ts[RR9M]: F:受控执行外部 FFmpeg/FFprobe 子进程 | R:code:electron/main/services/conversion/runner.ts,code:electron/main/services/media/probe.ts,code:electron/main/services/media/thumbnail.ts,code:electron/main/services/ffmpeg/status.ts,code:electron/main/services/ffmpeg/capabilities.ts | A:runProcess,ProcessResult,RunProcessOptions,RunProcess,ProcessError | S:固定 shell:false 且参数用数组，禁止拼接 shell 字符串；统一收集 stdout/stderr 并在非零退出时拒绝；超时会 kill；abort 会 kill 并在 3 秒后兜底；onStdout 回调异常只记日志
+resolver.ts[IR8S]: F:解析并验证成对的 FFmpeg/FFprobe 路径 | R:code:electron/main/services/ffmpeg/layout.ts,code:electron/main/services/ffmpeg/status.ts,code:shared/media.ts,code:scripts/prepare-ffmpeg.mjs | A:resolveFfmpegPaths,FfmpegPaths,ResolveFfmpegOptions | S:顺序是 FRAMEFORGE_FFMPEG_DIR、随包目录、系统 PATH；同一目录必须同时有 ffmpeg 与 ffprobe；去引号并按小写路径去重；找不到返回 null
+status.ts[RO8S]: F:检查并缓存 FFmpeg 环境状态 | R:code:electron/main/services/ffmpeg/resolver.ts,code:electron/main/services/ffmpeg/process.ts,code:shared/media.ts,code:electron/main/ipc/handlers.ts | A:FfmpegService,FfmpegServiceDependencies,getStatus,parseFfmpegVersion | S:同时执行 ffmpeg/ffprobe -version，超时 10 秒；并发请求共享 pending，refresh 强制重查；失败返回 available:false 且路径为 null，版本只取数字段
+
+===D:/projecct/2026/vedio/electron/main/services/history/===
+store.ts[PD8L]: F:持久化转换历史并校验磁盘数据 | R:code:shared/history.ts,code:shared/conversion.ts,code:electron/main/services/system/path-exists.ts,code:electron/main/ipc/handlers.ts,code:electron/main/services/conversion/queue.ts | A:ConversionHistoryStore,createConversionHistoryStore,parseHistoryId,HistoryStoreError,ConversionHistoryStoreOptions | S:主进程独占历史文件；临时文件写完后 rename；损坏文件先备份再回退空历史；所有变更串行；只记录终态且同一 job 只记一次；读取时重新计算 outputExists；错误和日志截断
+
+===D:/projecct/2026/vedio/electron/main/services/media/===
+import-validation.ts[DS6T]: F:校验拖拽导入的视频路径 | R:code:shared/media.ts,code:electron/main/services/media/media-service.ts,code:electron/main/ipc/handlers.ts | A:parseVideoPaths,MAX_IMPORT_FILES,ImportPathError | S:最多 100 个；只接受绝对路径和已知视频扩展名；按小写去重；存在性、可读性和媒体合法性交给 MediaService 与 FFprobe
+media-service.ts[AB7S]: F:编排媒体导入的元数据探测与缩略图 | R:code:electron/main/services/media/probe.ts,code:electron/main/services/media/thumbnail.ts,code:electron/main/services/ffmpeg/status.ts,code:electron/main/ipc/handlers.ts | A:MediaService,MediaServiceDependencies,createMediaService,toErrorMessage | S:每个文件独立处理；元数据失败只把该文件标 error，不中断整批；缩略图失败保留元数据并写 thumbnailError；返回顺序与输入一致
+probe.ts[DB8L]: F:校验媒体路径并用 FFprobe 解析元数据与输出摘要 | R:code:electron/main/services/ffmpeg/process.ts,code:electron/main/services/conversion/queue.ts,code:electron/main/services/conversion/runner.ts,code:shared/media.ts | A:validateVideoPath,buildFfprobeArgs,parseFfprobeJson,probeMedia,parseOutputProbeJson,probeOutputFile | S:导入只接受绝对路径、普通文件、可读且扩展名合法；输出验证允许 mp3 等音频；attached_pic 不算视频轨；参数数组不经过 shell，超时 30 秒；时长缺失时回退到视频流
+thumbnail.ts[DU6S]: F:用 FFmpeg 抽取 320×180 JPEG 缩略图 | R:code:electron/main/services/ffmpeg/process.ts,code:electron/main/services/media/media-service.ts,code:shared/media.ts | A:buildThumbnailArgs,extractThumbnail,ThumbnailError,ThumbnailOptions | S:2 秒以上视频先在第 1 秒抽帧，失败再退回第 0 帧；短视频直接第 0 帧；临时文件在系统临时目录且必须删除；超时 30 秒；失败可降级为占位图
+
+===D:/projecct/2026/vedio/electron/main/services/system/===
+open-path.ts[IS6T]: F:打开主进程已确认存在的目录 | R:code:electron/main/ipc/handlers.ts,code:electron/main/services/system/path-exists.ts,code:electron/main/index.ts | A:openExistingDirectory,OpenExistingDirectoryDependencies,OpenDirectoryError | S:只接受绝对且存在的目录；不接收 renderer 任意路径；openPath 返回非空错误字符串时视为失败
+path-exists.ts[RG4T]: F:检查主进程掌握的路径是否存在 | R:code:electron/main/services/history/store.ts,code:electron/main/services/system/open-path.ts,code:electron/main/services/conversion/output-actions.ts | A:pathExists | S:吞掉所有 access 错误并返回 false；只用于主进程已信任的路径
+
+===D:/projecct/2026/vedio/electron/preload/===
+api.ts[IU7T]: F:把受控 IPC 能力封装为 DesktopAPI | R:code:shared/ipc.ts,code:shared/conversion.ts,code:shared/capabilities.ts,code:shared/history.ts,code:shared/media.ts | A:createDesktopApi,Invoke,Subscribe,ResolveFilePath | S:暴露的方法必须与 DesktopAPI 完全一致；不直接暴露 ipcRenderer；subscribe 返回取消函数；resolveFilePath 失败返回空字符串
+index.ts[EU7T]: F:通过 contextBridge 暴露 DesktopAPI | R:code:electron/preload/api.ts,code:shared/ipc.ts,code:electron.vite.config.ts | A:contextBridge.exposeInMainWorld | S:sandbox preload 必须保持 CJS；监听器包装后丢弃 IpcRendererEvent；文件路径只经 webUtils.getPathForFile；绝不暴露 ipcRenderer
+types.d.ts[FG4T]: F:声明 window.desktopAPI 的全局类型 | R:code:shared/ipc.ts,code:electron/preload/api.ts | A:Window.desktopAPI | S:必须与 DesktopAPI 同步；仅环境声明，不产生运行时代码
+
+===D:/projecct/2026/vedio/scripts/===
+create-icon.ps1[OV5S]: F:用 PowerShell 生成 Windows PNG/ICO 图标 | R:code:package.json | A:- | S:PowerShell 生成 256×256 PNG/ICO，输出 build/icon.png 与 build/icon.ico；不依赖第三方库；ICO 宽高字节 0 表示 256
+e2e-packaged.mjs[TQ8L]: F:在隔离环境验收打包版真实导入、转换与历史 | R:code:scripts/prepare-ffmpeg.mjs,code:package.json,code:docs/TEST_PLAN.md,code:docs/FFMPEG.md | A:npm run e2e:packaged,FRAMEFORGE_E2E_EXE,FRAMEFORGE_E2E_SCREENSHOT | S:移除 PATH 与 FRAMEFORGE_FFMPEG* 后启动安装目录版；断言 FFmpeg 路径在 resources\ffmpeg；用 CDP 拖拽真实中文/空格路径；生成并验证 mp4/mkv/webm/mp3；检查历史持久化；需先 dist:dir
+prepare-ffmpeg.mjs[OV8M]: F:复制并验证随包 FFmpeg/FFprobe 与许可证 | R:code:docs/FFMPEG.md,code:package.json,code:THIRD_PARTY_NOTICES.md,code:electron/main/services/ffmpeg/layout.ts | A:npm run prepare:ffmpeg,FRAMEFORGE_FFMPEG_SOURCE,FRAMEFORGE_FFMPEG_DIR | S:源目录可显式指定或取其 bin，否则查 PATH；目标目录每次重建；Windows 复制全部 DLL；复制 LICENSE/COPYING/README；真实执行 -version 并写 bundle-manifest.json，不伪造版本
+
+===D:/projecct/2026/vedio/shared/===
+capabilities.ts[LB8S]: F:定义编码器能力矩阵与格式可用性契约 | R:code:shared/conversion.ts,code:electron/main/services/ffmpeg/capabilities.ts,code:electron/main/ipc/handlers.ts,code:src/components/ConversionSettings.tsx | A:ENCODER_IDS,parseEncoderList,buildConversionCapabilities,getFormatCapability,ConversionCapabilities,FormatCapability | S:只认五个编码器；未知或缺失一律 false，绝不假设可用；格式要求其视频与音频编码器全部存在；解析器匹配 V/A/S 编码器行；renderer 必须据此禁用格式
+conversion-args.ts[LB9S]: F:构造唯一的 FFmpeg 转换参数并格式化命令预览 | R:code:shared/conversion.ts,code:electron/main/services/conversion/runner.ts,code:electron/main/services/conversion/args.ts,code:src/App.tsx | A:buildConversionArgs,formatCommandForDisplay,getFormatExtension,ConversionArgsError,BuildConversionArgsOptions | S:不导入 Node/Electron；主进程执行与 renderer 预览必须共用此实现；临时输出必须以目标扩展名结尾；MP3 拒绝无音轨或移除音轨；只缩小不放大；固定 -progress pipe:1 与 -nostats
+conversion.ts[LB9M]: F:定义输出格式、质量预设与转换任务共享契约 | R:code:shared/conversion-args.ts,code:shared/capabilities.ts,code:shared/history.ts,code:electron/main/services/conversion/validation.ts,code:src/App.tsx | A:OUTPUT_PROFILES,QUALITY_PRESETS,RESOLUTION_PRESETS,ConversionJob,AdvancedConversionSettings,isOutputFormat | S:不导入 Node/Electron；输出 profile 是扩展名、参数、能力检测和文案的唯一来源；MP3 的 videoEncoder 必须为 null；CRF 范围 18–30；分辨率目标只缩小不放大；进度 100 只在真实输出验证后出现
+history.ts[LD7T]: F:定义转换历史模型与合并去重规则 | R:code:shared/conversion.ts,code:electron/main/services/history/store.ts,code:src/App.tsx,code:src/components/HistoryCard.tsx | A:MAX_CONVERSION_HISTORY_ENTRIES,ConversionHistoryEntry,isConversionHistoryStatus,mergeHistoryEntries | S:只记录 completed/failed/canceled；按 finishedAt、再按 startedAt 倒序；按 id 去重；默认上限 200；outputExists 读取时计算，不持久化
+ipc.ts[LM9T]: F:定义 IPC 通道、DesktopAPI 与白名单键 | R:code:electron/preload/api.ts,code:electron/main/ipc/handlers.ts,code:electron/preload/index.ts,code:src/types/global.d.ts | A:IPC_CHANNELS,DesktopAPI,DESKTOP_API_KEYS,AppInfo,DesktopApiKey | S:通道名是主进程与 preload 的共同契约；DesktopAPI 只暴露受控能力；DESKTOP_API_KEYS 必须与接口同步；两个订阅方法返回取消函数；getPathForFile 不得从 File.path 读取
+media-format.ts[LU5T]: F:格式化时长、帧率、文件大小与分辨率 | R:code:shared/media.ts,code:src/components/MediaCard.tsx,code:src/components/JobQueue.tsx,code:src/components/HistoryCard.tsx | A:formatDuration,formatFrameRate,formatFileSize,formatResolution | S:纯字符串转换，不访问文件系统；非法或负值返回“未知”；时长四舍五入到秒；文件大小按 1024 进制；分辨率用 × 连接
+media.ts[LB8T]: F:定义视频扩展名、媒体元数据与 FFmpeg 状态契约 | R:code:electron/main/services/media/probe.ts,code:electron/main/services/ffmpeg/status.ts,code:shared/ipc.ts,code:src/components/MediaCard.tsx | A:VIDEO_EXTENSIONS,MediaMetadata,MediaItem,FfmpegStatus,FfmpegSource | S:不导入 Node/Electron；视频扩展名白名单只用于导入，输出验证另走 probe；MediaItem.error 表示元数据失败，thumbnailError 只表示缩略图失败；source 区分 environment/bundled/system
+path.ts[LU5T]: F:提供 renderer 可用的纯路径字符串工具 | R:code:src/App.tsx,code:src/components/HistoryCard.tsx,code:shared/media.ts | A:getParentDirectory,getFileName | S:不访问文件系统，也不依赖 Node API；同时接受 / 和 \；盘符根保留分隔符；最终合法性仍由主进程验证；空输入返回 null 或空串
+
+===D:/projecct/2026/vedio/src/===
+App.tsx[AB9L]: F:编排渲染进程的导入、设置、队列、历史与提示音 | R:code:src/hooks/useQueueCompletionSound.ts,code:src/components/ConversionSettings.tsx,code:src/components/JobQueue.tsx,code:src/components/HistoryCard.tsx,code:shared/conversion-args.ts | A:App,mergeMediaItems,upsertConversionJob,mergeStartedJobs | S:所有桌面能力经 window.desktopAPI；转换更新可能早于 start 响应，必须用 upsert/merge 防回退；MP3 自动排除无音轨项；转码进行中不可移除源文件；Ctrl+O 导入、Ctrl+Enter 开始；完成提示音只在活动任务从 >0 变 0 时播放
+main.tsx[EU4T]: F:挂载 React 应用到 #root | R:code:index.html,code:src/App.tsx,code:src/styles/index.css | A:createRoot | S:找不到 #root 直接抛错；StrictMode 包裹 App；全局样式只在这里导入
+
+===D:/projecct/2026/vedio/src/components/===
+AdvancedSettings.tsx[AU6M]: F:编辑分辨率、CRF、音频模式、码率并预览命令 | R:code:shared/conversion.ts,code:shared/conversion-args.ts,code:src/components/ConversionSettings.tsx | A:AdvancedSettings,AdvancedSettingsProps | S:折叠面板；视频格式显示分辨率、CRF、音频模式，MP3 只显示音频码率；CRF 留空表示跟随预设；命令预览可复制并反馈成功/失败；所有控件受 disabled 控制
+AppShell.tsx[AU6S]: F:提供应用外壳、头部状态与页脚入口 | R:code:src/components/background/CanvasFractalGrid.tsx,code:src/components/HeaderGlass.tsx,code:src/types/ui.ts,code:src/App.tsx | A:AppShell,FfmpegBadge | S:固定 h-screen 并让内容区独立滚动；背景和玻璃层 aria-hidden 且 pointer-events-none；FFmpeg 徽标区分 loading/error/ready；页脚打开日志目录并提示快捷键；版本号可选
+ConversionSettings.tsx[AU8M]: F:渲染输出设置并控制转换启动条件 | R:code:src/components/AdvancedSettings.tsx,code:shared/capabilities.ts,code:shared/conversion.ts,code:src/App.tsx | A:ConversionSettings,ConversionSettingsProps | S:格式下拉用能力矩阵禁用不可用项并显示缺失编码器；无输出目录、无可转换项、启动中、禁用或格式不可用时不能开始；MP3 显示音频质量并提示仅导出音频；无音轨排除数单独提示
+EmptyState.tsx[AU4T]: F:展示空工作区并引导导入视频 | R:code:src/App.tsx,code:src/components/MediaList.tsx | A:EmptyState,EmptyStateProps | S:导入中显示 spinner 并设置 aria-busy；disabled 或 importing 时按钮禁用；文案强调本地处理不上传
+FfmpegErrorBanner.tsx[AU6T]: F:展示 FFmpeg 未就绪的阻塞提示与操作 | R:code:src/App.tsx,code:src/components/AppShell.tsx | A:FfmpegErrorBanner,FfmpegErrorBannerProps | S:只提供重新检测和打开日志目录；不暴露开发者路径、环境变量或内部资源目录；role=alert
+HeaderGlass.tsx[AU3T]: F:渲染头部玻璃噪点纹理 | R:code:src/components/AppShell.tsx,code:src/styles/index.css | A:HeaderGlass | S:纯装饰且不可点击；filter id 与 CSS 一致；无 styled-jsx/Next
+HistoryCard.tsx[AD7M]: F:展示、筛选和清理转换历史 | R:code:shared/history.ts,code:shared/media-format.ts,code:shared/path.ts,code:src/App.tsx | A:HistoryCard,HistoryCardProps | S:只展示终态记录；清空只删记录不删输出；完成但输出不存在时禁用打开；失败可复制错误；默认 5 条，可筛选全部/完成/失败/取消并展开
+JobQueue.tsx[AU7M]: F:展示任务进度、状态、错误与输出操作 | R:code:shared/conversion.ts,code:shared/media-format.ts,code:src/App.tsx | A:JobQueue,JobQueueProps | S:进度用 aria-valuenow；queued/running 可取消，终态可移除；清空只删终态不删输出；失败可复制错误/打开日志；完成可打开文件或目录；显示 ETA 与 speed
+MediaCard.tsx[AU5S]: F:展示单个视频的元数据与缩略图 | R:code:shared/media.ts,code:shared/media-format.ts,code:src/components/MediaList.tsx | A:MediaCard,MediaCardProps | S:缩略图失败显示占位图但不阻止转换；元数据为空时只显示读取失败；removeDisabled 由活动任务路径决定；移除只影响工作区，不删源文件
+MediaList.tsx[AU5T]: F:列出工作区视频并提供添加入口 | R:code:src/components/MediaCard.tsx,code:shared/media.ts,code:src/App.tsx | A:MediaList,MediaListProps | S:按 path 作为 key；活动任务对应的源文件禁止移除；导入中按钮显示 spinner 并禁用；空列表由 App 的 EmptyState 处理
+
+===D:/projecct/2026/vedio/src/components/background/===
+CanvasFractalGrid.tsx[AU5L]: F:渲染自适应点阵、渐变、噪点与鼠标光晕背景 | R:code:src/components/AppShell.tsx,code:src/styles/index.css | A:CanvasFractalGrid,CanvasFractalGridProps | S:Canvas 2D + requestAnimationFrame；按 FPS 自动降级 low/medium/high；移动端增大点距；mousemove 用 rAF 节流；卸载时移除监听并取消动画帧；纯装饰 aria-hidden
+
+===D:/projecct/2026/vedio/src/hooks/===
+useQueueCompletionSound.ts[AU6T]: F:在队列从有任务变为全部结束时播放提示音 | R:code:src/App.tsx,code:src/assets/queue-complete.mp3 | A:useQueueCompletionSound | S:只在 previous>0 且 current=0 时触发；首次渲染或原本为空不播放；复用同一个 Audio 并重置 currentTime；play 被拒绝时静默吞掉；不阻塞转换
+
+===D:/projecct/2026/vedio/src/styles/===
+index.css[AU4T]: F:定义 Tailwind 主题、全局布局与头部玻璃纹理 | R:code:src/components/HeaderGlass.tsx,code:src/components/AppShell.tsx,code:src/main.tsx | A:--font-sans,header-glass-texture | S:html/body/#root 满高；字体优先 Segoe UI/微软雅黑；玻璃 filter id 与 HeaderGlass 一致；深色滚动条
+
+===D:/projecct/2026/vedio/src/types/===
+global.d.ts[FG4T]: F:声明 window.desktopAPI 的全局类型 | R:code:shared/ipc.ts,code:src/App.tsx | A:Window.desktopAPI | S:必须与 DesktopAPI 同步；仅环境声明，不产生运行时代码
+ui.ts[FU4T]: F:定义应用信息与 FFmpeg 的 UI 状态联合 | R:code:src/App.tsx,code:src/components/AppShell.tsx,code:shared/ipc.ts | A:AppInfoState,FfmpegState | S:loading/ready/error 三态；error 只用 message；ready 保留完整 info
+
+===D:/projecct/2026/vedio/test/helpers/===
+capabilities.ts[TQ5T]: F:提供基于真实能力构造函数的测试矩阵 | R:code:shared/capabilities.ts,code:test/phase-06-formats.test.tsx | A:readyCapabilities,capabilitiesWithout | S:用真实 buildConversionCapabilities 构造，避免手写 formats；readyCapabilities 全可用；capabilitiesWithout 只覆盖指定编码器
+test-logger.ts[TQ3T]: F:为测试提供带作用域的 electron-log 日志器 | R:code:electron/main/services/logger-core.ts,code:test/setup.ts | A:createTestLogger | S:关闭文件传输避免污染真实 main.log；控制台 info；作用域加 test: 前缀
+
+===D:/projecct/2026/vedio/test/===
+setup.ts[TQ5T]: F:为每个 Vitest 用例输出开始与结果日志 | R:code:test/helpers/test-logger.ts,code:vitest.config.mts | A:beforeEach,afterEach | S:beforeEach 打印 START；onTestFinished 根据 pass/skip/fail 打印结果和耗时；afterEach 调用 cleanup 清理 DOM；失败附 errors
