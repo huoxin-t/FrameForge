@@ -20,6 +20,7 @@ import { FfmpegService } from '../electron/main/services/ffmpeg/status';
 import type { AppInfo, DesktopAPI } from '../shared/ipc';
 import type { FfmpegStatus } from '../shared/media';
 import { createTestLogger } from './helpers/test-logger';
+import { readyCapabilities } from './helpers/capabilities';
 
 const logger = createTestLogger('phase-05');
 
@@ -62,6 +63,7 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
   const api: DesktopAPI = {
     getAppInfo: vi.fn().mockResolvedValue(appInfo),
     getFfmpegStatus: vi.fn().mockResolvedValue(missingStatus),
+    getConversionCapabilities: vi.fn().mockResolvedValue(readyCapabilities),
     selectVideos: vi.fn().mockResolvedValue([]),
     importVideos: vi.fn().mockResolvedValue([]),
     getPathForFile: vi.fn(() => ''),

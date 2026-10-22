@@ -36,6 +36,19 @@ export type VideoPathValidation =
  * 只接受绝对路径、受支持的视频扩展名、真实存在且可读的普通文件。
  */
 export async function validateVideoPath(filePath: string): Promise<VideoPathValidation> {
+  return validateMediaPath(filePath, true);
+}
+
+/**
+ * 校验一个可读取的普通文件。
+ *
+ * 导入阶段要求视频扩展名；输出验证允许 .mp3 等音频文件，但仍要求
+ * 绝对路径、真实存在、普通文件和可读权限。
+ */
+async function validateMediaPath(
+  filePath: string,
+  videoOnly: boolean,
+): Promise<VideoPathValidation> {
   if (typeof filePath !== 'string' || !filePath.trim()) {
     return { ok: false, error: '文件路径为空' };
   }
@@ -51,14 +64,16 @@ export async function validateVideoPath(filePath: string): Promise<VideoPathVali
       return { ok: false, error: '路径不是文件（可能是目录）' };
     }
 
-    const extension = extname(trimmed).slice(1).toLowerCase();
-    if (!(VIDEO_EXTENSIONS as readonly string[]).includes(extension)) {
-      return {
-        ok: false,
-        error: extension
-          ? `不支持的文件类型：.${extension}`
-          : '不支持的文件类型：缺少扩展名',
-      };
+    if (videoOnly) {
+      const extension = extname(trimmed).slice(1).toLowerCase();
+      if (!(VIDEO_EXTENSIONS as readonly string[]).includes(extension)) {
+        return {
+          ok: false,
+          error: extension
+            ? `不支持的文件类型：.${extension}`
+            : '不支持的文件类型：缺少扩展名',
+        };
+      }
     }
 
     await fsAccess(trimmed, constants.R_OK);
@@ -230,6 +245,148 @@ export async function probeMedia(
     });
     throw new MediaProbeError(
       `无法读取视频：${cleanDetail || 'FFprobe 执行失败'}`,
+      detail,
+    );
+  }
+}
+
+export interface OutputProbeResult {
+  durationMs: number | null;
+  containerFormat: string | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * 解析输出文件探测结果。
+ *
+ * 与导入用的 parseFfprobeJson 不同，输出允许只有音频（MP3），但必须至少
+ * 有一条可播放的视频或音频轨道；空容器仍会被拒绝。
+ */
+export function parseOutputProbeJson(
+  stdout: string,
+  filePath: string,
+): OutputProbeResult {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new MediaProbeError(
+      '无法验证输出文件：FFprobe 返回的内容不是合法 JSON',
+      stdout.slice(0, 300),
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new MediaProbeError('无法验证输出文件：根节点不是对象');
+  }
+
+  const streams = Array.isArray(parsed.streams)
+    ? parsed.streams.filter((stream): stream is Record<string, unknown> =>
+        isRecord(stream),
+      )
+    : [];
+  const videoStream = streams.find((stream) => {
+    if (stream.codec_type !== 'video') {
+      return false;
+    }
+    const disposition = isRecord(stream.disposition) ? stream.disposition : {};
+    return disposition.attached_pic !== 1;
+  });
+  const audioStream = streams.find((stream) => stream.codec_type === 'audio');
+
+  if (!videoStream && !audioStream) {
+    throw new MediaProbeError('输出文件没有可播放的音视频轨道');
+  }
+
+  const format = isRecord(parsed.format) ? parsed.format : {};
+  const durationSeconds =
+    parsePositiveNumber(format.duration) ??
+    parsePositiveNumber(videoStream?.duration) ??
+    parsePositiveNumber(audioStream?.duration);
+
+  return {
+    durationMs:
+      durationSeconds === null ? null : Math.round(durationSeconds * 1000),
+    containerFormat: detectContainer(asString(format.format_name), filePath),
+    videoCodec: videoStream
+      ? normalizeVideoCodec(asString(videoStream.codec_name))
+      : null,
+    audioCodec: audioStream
+      ? normalizeAudioCodec(asString(audioStream.codec_name))
+      : null,
+    hasVideo: Boolean(videoStream),
+    hasAudio: Boolean(audioStream),
+    width: videoStream ? parsePositiveInteger(videoStream.width) : null,
+    height: videoStream ? parsePositiveInteger(videoStream.height) : null,
+  };
+}
+
+/** 调用真实 ffprobe 验证输出；允许音频文件，不依赖导入扩展名白名单。 */
+export async function probeOutputFile(
+  ffprobePath: string,
+  filePath: string,
+  dependencies: ProbeDependencies = {},
+): Promise<OutputProbeResult> {
+  const validation = await validateMediaPath(filePath, false);
+  if (!validation.ok) {
+    throw new MediaProbeError(validation.error);
+  }
+
+  const startedAt = Date.now();
+  logger.info('Probing output file', { filePath: validation.path });
+
+  try {
+    const result = await (dependencies.runProcess ?? runProcess)({
+      executable: ffprobePath,
+      args: buildFfprobeArgs(validation.path),
+      timeoutMs: 30000,
+    });
+
+    if (result.exitCode !== 0) {
+      throw new ProcessError(
+        `ffprobe 退出码 ${result.exitCode}`,
+        result.exitCode,
+        result.stderr,
+      );
+    }
+
+    const summary = parseOutputProbeJson(result.stdout, validation.path);
+    logger.info('Output probe finished', {
+      filePath: validation.path,
+      containerFormat: summary.containerFormat,
+      videoCodec: summary.videoCodec,
+      audioCodec: summary.audioCodec,
+      hasVideo: summary.hasVideo,
+      hasAudio: summary.hasAudio,
+      elapsedMs: Date.now() - startedAt,
+    });
+    return summary;
+  } catch (error) {
+    if (error instanceof MediaProbeError) {
+      logger.warn('Output probe failed', { filePath: validation.path, error });
+      throw error;
+    }
+
+    const detail =
+      error instanceof ProcessError
+        ? error.stderr
+        : error instanceof Error
+          ? error.message
+          : '';
+    const cleanDetail = cleanErrorDetail(detail);
+    logger.warn('Output probe failed', {
+      filePath: validation.path,
+      error,
+      elapsedMs: Date.now() - startedAt,
+    });
+    throw new MediaProbeError(
+      `无法验证输出文件：${cleanDetail || 'FFprobe 执行失败'}`,
       detail,
     );
   }

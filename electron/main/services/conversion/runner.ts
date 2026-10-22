@@ -10,11 +10,19 @@
  */
 import { rename as fsRename, rm as fsRm, stat } from 'node:fs/promises';
 import type { FfmpegStatus } from '../../../../shared/media';
-import type { ConversionJob, ConversionSettings } from '../../../../shared/conversion';
+import {
+  getOutputFormat,
+  type ConversionJob,
+  type ConversionSettings,
+} from '../../../../shared/conversion';
 import { createLogger } from '../logger';
 import type { FfmpegService } from '../ffmpeg/status';
 import { ProcessError, runProcess, type RunProcess } from '../ffmpeg/process';
-import { probeMedia } from '../media/probe';
+import {
+  probeMedia,
+  probeOutputFile,
+  type OutputProbeResult,
+} from '../media/probe';
 import { buildConversionArgs } from './args';
 import {
   buildTemporaryOutputPath,
@@ -34,6 +42,10 @@ export interface ConversionRunnerDependencies {
     Pick<FfmpegStatus, 'available' | 'ffmpegPath' | 'ffprobePath' | 'error'>
   >;
   probe: (sourcePath: string) => Promise<ConversionProbeResult>;
+  probeOutput?: (
+    ffprobePath: string,
+    outputPath: string,
+  ) => Promise<OutputProbeResult>;
   runProcess?: RunProcess;
   pathExists?: (path: string) => Promise<boolean>;
   fileSize?: (path: string) => Promise<number>;
@@ -70,6 +82,7 @@ export class ConversionCanceledError extends Error {
 export class ConversionRunner {
   private readonly getFfmpegStatus: ConversionRunnerDependencies['getFfmpegStatus'];
   private readonly probe: ConversionRunnerDependencies['probe'];
+  private readonly probeOutput?: ConversionRunnerDependencies['probeOutput'];
   private readonly execute: RunProcess;
   private readonly exists: (path: string) => Promise<boolean>;
   private readonly fileSize: (path: string) => Promise<number>;
@@ -79,6 +92,7 @@ export class ConversionRunner {
   constructor(dependencies: ConversionRunnerDependencies) {
     this.getFfmpegStatus = dependencies.getFfmpegStatus;
     this.probe = dependencies.probe;
+    this.probeOutput = dependencies.probeOutput;
     this.execute = dependencies.runProcess ?? runProcess;
     this.exists = dependencies.pathExists ?? defaultPathExists;
     this.fileSize = dependencies.fileSize ?? defaultFileSize;
@@ -154,6 +168,8 @@ export class ConversionRunner {
         throw new ConversionError('输出文件为空，任务未完成');
       }
 
+      await this.verifyOutput(job, settings, probe.hasAudio, status.ffprobePath);
+
       logger.info('Conversion completed', {
         jobId: job.id,
         outputPath: job.outputPath,
@@ -203,6 +219,116 @@ export class ConversionRunner {
       });
     }
   }
+
+  private async verifyOutput(
+    job: ConversionJob,
+    settings: ConversionSettings,
+    sourceHasAudio: boolean,
+    ffprobePath: string | null,
+  ): Promise<void> {
+    if (!this.probeOutput) {
+      return;
+    }
+
+    if (!ffprobePath) {
+      await this.remove(job.outputPath).catch(() => undefined);
+      throw new ConversionError('FFprobe 未就绪，无法验证输出文件');
+    }
+
+    try {
+      const summary = await this.probeOutput(ffprobePath, job.outputPath);
+      assertOutputMatchesProfile(summary, settings, sourceHasAudio);
+      logger.info('Conversion output verified', {
+        jobId: job.id,
+        containerFormat: summary.containerFormat,
+        videoCodec: summary.videoCodec,
+        audioCodec: summary.audioCodec,
+        hasVideo: summary.hasVideo,
+        hasAudio: summary.hasAudio,
+      });
+    } catch (error) {
+      await this.remove(job.outputPath).catch((removeError: unknown) => {
+        logger.warn('Failed to remove invalid output file', {
+          jobId: job.id,
+          outputPath: job.outputPath,
+          error: removeError,
+        });
+      });
+
+      if (error instanceof ConversionError) {
+        throw error;
+      }
+
+      throw new ConversionError(
+        `输出校验失败：${toErrorMessage(error)}`,
+        errorDetail(error),
+      );
+    }
+  }
+}
+
+/**
+ * 校验真实输出与所选 profile 一致。
+ *
+ * 不能只看“文件非空”：编码器异常、错误容器或 MP3 意外带视频轨，
+ * 都必须让任务失败并清理输出，不能对用户显示“已完成”。
+ */
+export function assertOutputMatchesProfile(
+  summary: OutputProbeResult,
+  settings: ConversionSettings,
+  sourceHasAudio: boolean,
+): void {
+  const profile = getOutputFormat(settings.format);
+
+  if (summary.durationMs !== null && summary.durationMs <= 0) {
+    throw new ConversionError('输出文件时长为 0，无法播放');
+  }
+
+  if (!summary.containerFormat) {
+    throw new ConversionError('无法识别输出容器');
+  }
+  if (summary.containerFormat !== profile.probeContainer) {
+    throw new ConversionError(
+      `输出容器为 ${summary.containerFormat}，预期 ${profile.probeContainer}`,
+    );
+  }
+
+  if (profile.kind === 'audio') {
+    if (!summary.hasAudio) {
+      throw new ConversionError('输出文件缺少音频轨道');
+    }
+    if (summary.hasVideo) {
+      throw new ConversionError('仅音频输出中出现了视频轨道');
+    }
+    if (summary.audioCodec !== profile.audioCodec) {
+      throw new ConversionError(
+        `输出音频编码为 ${summary.audioCodec ?? '未知'}，预期 ${profile.audioCodec}`,
+      );
+    }
+    return;
+  }
+
+  if (!summary.hasVideo) {
+    throw new ConversionError('输出文件缺少视频轨道');
+  }
+  if (summary.videoCodec !== profile.videoCodec) {
+    throw new ConversionError(
+      `输出视频编码为 ${summary.videoCodec ?? '未知'}，预期 ${profile.videoCodec}`,
+    );
+  }
+
+  if (sourceHasAudio) {
+    if (!summary.hasAudio) {
+      throw new ConversionError('输出文件缺少源视频中的音频轨道');
+    }
+    if (summary.audioCodec !== profile.audioCodec) {
+      throw new ConversionError(
+        `输出音频编码为 ${summary.audioCodec ?? '未知'}，预期 ${profile.audioCodec}`,
+      );
+    }
+  } else if (summary.hasAudio) {
+    throw new ConversionError('无音轨源文件却生成了音频轨道');
+  }
 }
 
 /** 使用真实 FFmpeg 状态和 ffprobe 构造执行器。 */
@@ -211,6 +337,8 @@ export function createConversionRunner(
 ): ConversionRunner {
   return new ConversionRunner({
     getFfmpegStatus: () => ffmpeg.getStatus(),
+    probeOutput: (ffprobePath, outputPath) =>
+      probeOutputFile(ffprobePath, outputPath),
     probe: async (sourcePath) => {
       const status = await ffmpeg.getStatus();
       if (!status.available || !status.ffprobePath) {

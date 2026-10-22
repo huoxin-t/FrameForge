@@ -4,6 +4,7 @@ import {
   type DesktopAPI,
 } from '../../shared/ipc';
 import type { ConversionJob, ConversionUpdate, StartConversionsRequest } from '../../shared/conversion';
+import type { ConversionCapabilities } from '../../shared/capabilities';
 import type { FfmpegStatus, MediaItem } from '../../shared/media';
 
 export type Invoke = (channel: string, payload?: unknown) => Promise<unknown>;
@@ -25,6 +26,8 @@ export function createDesktopApi(
     getAppInfo: () => invoke(IPC_CHANNELS.getAppInfo) as Promise<AppInfo>,
     getFfmpegStatus: () =>
       invoke(IPC_CHANNELS.getFfmpegStatus) as Promise<FfmpegStatus>,
+    getConversionCapabilities: () =>
+      invoke(IPC_CHANNELS.getConversionCapabilities) as Promise<ConversionCapabilities>,
     selectVideos: () => invoke(IPC_CHANNELS.selectVideos) as Promise<MediaItem[]>,
     importVideos: (paths: string[]) =>
       invoke(IPC_CHANNELS.importPaths, paths) as Promise<MediaItem[]>,

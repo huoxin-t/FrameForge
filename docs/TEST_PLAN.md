@@ -1,6 +1,6 @@
 # FrameForge 测试计划
 
-> 记录时间：2026-10-21（M1 交付基线）
+> 记录时间：2026-10-22（M2 格式能力层完成）
 >
 > 原则：能自动化的必须真实执行；不能自动化的明确写“手工/未验证”，不用开发机 PATH 或 mock 结果代替干净机器验收。
 
@@ -9,9 +9,9 @@
 | 层级 | 内容 | 状态 |
 |---|---|---|
 | 单元测试 | 路径校验、参数构造、进度解析、输出命名、IPC 校验、状态机 | 已覆盖 |
-| 集成测试 | 真实 FFprobe/FFmpeg 生成样本、读取元数据、缩略图、MP4/MKV 转换、取消、失败清理 | 已覆盖 |
-| UI 测试 | 导入、错误态、队列、任务操作、快捷键、窄窗口 | 已覆盖 |
-| 打包目录 E2E | `release/win-unpacked` 真实启动、无 PATH、内置 FFmpeg、导入、转换、输出探测 | 已通过 |
+| 集成测试 | 真实 FFprobe/FFmpeg 生成样本、读取元数据、缩略图、MP4/MKV/WebM/MP3 转换、能力探测、取消、失败清理 | 已覆盖 |
+| UI 测试 | 导入、错误态、队列、任务操作、格式能力禁用、MP3 无音轨说明、快捷键、窄窗口 | 已覆盖 |
+| 打包目录 E2E | `release/win-unpacked` 真实启动、无 PATH、内置 FFmpeg、导入、MP4/WebM/MP3 转换、输出探测 | 已通过 |
 | 安装包 smoke test | NSIS 静默安装到新目录、启动、无 PATH 转换 | 已通过 |
 | 便携 zip E2E | 解压完整目录 zip、启动、无 PATH 转换 | 已通过 |
 | 卸载 smoke test | NSIS 静默卸载、安装目录清理 | 已通过 |
@@ -30,14 +30,14 @@ npm run e2e:packaged
 npm run dist:win
 ```
 
-当前基线（2026-10-21）：
+当前基线（2026-10-22）：
 
 ```text
-npm test          5 个测试文件，93 个测试全部通过，无 skip
+npm test          6 个测试文件，112 个测试全部通过，无 skip
 npm run typecheck 通过
 npm run build     main / preload / renderer 构建通过
 npm run dist:dir  目录版构建成功
-npm run dist:win  NSIS 安装包 + 完整目录 zip 构建成功
+npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 真实转换通过
 ```
 
 测试文件：
@@ -49,6 +49,7 @@ npm run dist:win  NSIS 安装包 + 完整目录 zip 构建成功
 | `test/phase-03-conversion.test.tsx` | 参数、进度、串行队列、真实 MP4/MKV、取消、失败清理 |
 | `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、任务 UI |
 | `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 |
+| `test/phase-06-formats.test.tsx` | 编码器能力矩阵、WebM/MP3 参数、输出 profile 校验、队列音频拒绝、真实输出、UI |
 
 每个测试自动输出 START / STEP / PASS 或 FAIL，失败时带错误对象。
 
@@ -62,11 +63,14 @@ npm run dist:win  NSIS 安装包 + 完整目录 zip 构建成功
 - 中文/空格路径；
 - 输出名冲突；
 - 真实 MP4 / MKV 转换；
+- 真实 WebM（VP9 + Opus）与 MP3 转换；
+- 真实 `ffmpeg -encoders` 能力探测；
+- 无音轨 MP3 入队拒绝；
 - 真实取消和临时文件清理。
 
 真实 FFmpeg 用例依赖构建机的 FFmpeg。M1 之后，`resources/ffmpeg/<platform>-<arch>/` 存在时会优先使用随包版本。
 
-## 4. M1 打包版 E2E
+## 4. 打包版 E2E（M1 交付链 + M2 格式）
 
 ### 4.1 目录版
 
@@ -85,11 +89,11 @@ npm run e2e:packaged
 4. 确认 `getFfmpegStatus()` 的 `source` 为 `bundled`；
 5. 通过 CDP 拖拽中文/空格路径视频到工作区；
 6. 检查 640×360 元数据和真实 JPEG 缩略图；
-7. 启动真实 MP4 转换，等待队列显示“已完成”；
-8. 检查输出文件非空；
-9. 用随包 `ffprobe` 验证输出为 H.264 640×360；
+7. 读取 `getConversionCapabilities()`，确认五个编码器和 MP4/WebM/MP3 均可用；
+8. 直接走受控 IPC 依次启动 MP4、WebM、MP3 转换，等待任务队列显示全部完成；
+9. 检查三个输出文件非空，并用随包 `ffprobe` 验证视频/音频编码；
 10. 检查页面不包含“运行环境 / FFmpeg 路径 / Node.js”；
-11. 保存 `docs/evidence/phase5-packaged.png`。
+11. 保存 `docs/evidence/phase6-formats.png` 与 `docs/evidence/phase6-mp3.png`。
 
 真实结果：
 
@@ -101,9 +105,13 @@ ffmpegPath: ...\resources\ffmpeg\win32-x64\ffmpeg.exe
 version: 8.0.1
 importMode: drag-drop
 输入: 阶段五 真实 视频.mp4（640×360，2000ms）
-输出: 阶段五 真实 视频_converted.mp4，49,555 字节
-输出探测: H.264 640×360
+能力: libx264 / aac / libvpx-vp9 / libopus / libmp3lame 全部 true
+MP4:  阶段五 真实 视频_converted.mp4，49,555 字节，H.264 640×360 + AAC
+WebM: 阶段五 真实 视频_converted.webm，73,708 字节，VP9 640×360 + Opus
+MP3:  阶段五 真实 视频_converted.mp3，67,019 字节，MP3 音频，无视频轨道
 ```
+
+> 4.2 / 4.3 是 M1 基线历史结果。M2 的 E2E 脚本已扩展为读取能力并转换 MP4/WebM/MP3；当前 `release/` 里的旧安装包和 zip 不包含 M2 能力，不能直接复用新脚本。M6 重建后再执行同样验收。
 
 ### 4.2 安装包
 
@@ -175,7 +183,32 @@ install-dir-exists=False
 
 > 说明：这是“新目录安装 + 移除 PATH + 静默卸载”的本机验证，不是独立 Windows VM。M6 仍需在干净 VM 中完成安装、取消、打开输出和卸载验收。
 
-## 5. 手工 / 未自动化项
+## 5. M2 格式能力与真实输出
+
+自动化覆盖：
+
+```text
+test/phase-06-formats.test.tsx
+- OutputProfile 矩阵、扩展名、编码器需求
+- 解析真实 ffmpeg -encoders 输出；缺失编码器生成原因并禁用格式
+- WebM 参数：libvpx-vp9、libopus、CRF、-b:v 0、无音轨 -an
+- MP3 参数：-vn、0:a:0、libmp3lame；无音轨明确拒绝
+- 入队阶段真实 ffprobe 探测音轨，无音轨不启动 FFmpeg
+- 真实能力服务、真实 WebM/MP3 输出、ffprobe 编码验证
+- 输出 profile 校验：错误容器、错误编码、MP3 带视频轨、缺失源音轨都失败
+```
+
+真实集成结果（本机随包 FFmpeg 8.0.1）：
+
+```text
+WebM: VP9 320×240 + Opus，任务 completed，输出文件存在
+MP3:  MP3 音频，无视频轨道，任务 completed
+无音轨 MP4 → MP3: 入队阶段 failed，错误包含“没有音轨”，未启动 FFmpeg
+```
+
+打包版抽测见第 4.1 节，已覆盖 MP4、WebM、MP3 各一次。该抽测对象是重新构建的 `release/win-unpacked`；安装包和 zip 仍是 M1 基线，M6 重建后再执行同样抽测。
+
+## 6. 手工 / 未自动化项
 
 | 项目 | 原因 | 当前证据 |
 |---|---|---|
@@ -188,26 +221,25 @@ install-dir-exists=False
 | 代码签名 | 未配置证书 | 安装包可运行，但可能出现 SmartScreen 提示 |
 | GPL 合规法律确认 | 需要项目维护者决定发布方式 | 已保留 LICENSE/README/source offer |
 
-## 6. 失败判据
+## 7. 失败判据
 
 以下任一情况视为验收失败：
 
 - 使用 mock 元数据、缩略图、进度或转换结果；
 - 移除 PATH 后应用回退到系统 FFmpeg，或显示“未就绪”；
-- 输出文件未经过退出码、临时文件、最终文件三重验证；
+- 输出文件未经过退出码、临时文件、最终文件非空和 FFprobe 编码校验；
+- WebM/MP3 输出编码或轨道与 profile 不符，却仍标记为完成；
+- 无音轨 MP3 仍启动 FFmpeg 或显示为可用；
 - 失败任务被标记为完成；
 - 主界面重新出现 Electron/Node/FFmpeg 版本或路径面板；
 - 安装包缺少 `resources/ffmpeg/win32-x64/`；
 - 测试跳过真实 FFmpeg 用例却报告全部通过。
 
-## 7. 后续补充
+## 8. 后续补充
 
-M2/M3 完成后需要追加：
+M3/M6 完成后需要追加：
 
-- WebM（VP9 + Opus）真实输出与 `ffprobe` 验证；
-- MP3 音频提取、无音轨拒绝；
-- 编码器能力探测缺失路径；
 - 高级设置、命令预览与实际参数一致性；
 - 动态 ETA 真实 `speed` 采样；
-- 打包版 WebM/MP3 抽测；
+- 输出设置持久化与损坏配置回退；
 - M6 干净 VM 的安装、取消、打开输出、卸载完整流程。

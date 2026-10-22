@@ -37,6 +37,7 @@ import {
 } from '../shared/ipc';
 import type { FfmpegStatus, MediaItem, MediaMetadata } from '../shared/media';
 import { createTestLogger } from './helpers/test-logger';
+import { readyCapabilities } from './helpers/capabilities';
 
 const logger = createTestLogger('phase-04');
 
@@ -329,6 +330,7 @@ describe('阶段 4 / preload 契约', () => {
       'cancelConversion',
       'copyText',
       'getAppInfo',
+      'getConversionCapabilities',
       'getFfmpegStatus',
       'getPathForFile',
       'importVideos',
@@ -391,6 +393,7 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
   const api: DesktopAPI = {
     getAppInfo: vi.fn().mockResolvedValue(appInfo),
     getFfmpegStatus: vi.fn().mockResolvedValue(readyStatus),
+    getConversionCapabilities: vi.fn().mockResolvedValue(readyCapabilities),
     selectVideos: vi.fn().mockResolvedValue([]),
     importVideos: vi.fn().mockResolvedValue([]),
     getPathForFile: vi.fn(() => sampleItem.path),

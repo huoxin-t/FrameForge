@@ -2,9 +2,9 @@
 
 > 这份文档面向要接手、讲解或继续开发 FrameForge 的人。目标不是重复 README 的功能列表，而是把“用户点一下按钮之后，代码到底发生了什么”讲清楚。
 >
-> 当前基线：**阶段 4（功能型产品体验）和 M1（Windows 最小可交付基线）已完成**。FFmpeg 已随安装包分发，安装版在移除系统 PATH 后仍能真实转换；M2（WebM/MP3）尚未开始。视觉方向也还没有最终确定。
+> 当前基线：**阶段 4（功能型产品体验）、M1（Windows 最小可交付基线）和 M2（格式能力层 + WebM/MP3）已完成**。FFmpeg 已随安装包分发，安装版在移除系统 PATH 后仍能真实转换；WebM/MP3 已通过真实 FFmpeg、FFprobe 和打包版 E2E。视觉方向还没有最终确定。
 >
-> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于 M2/M3/M6 的计划会明确标注为“待完成”。
+> 阅读原则：本文只把已经写入代码、已经运行过的能力写成“已实现”；属于 M3/M6 的计划会明确标注为“待完成”。
 
 ### 阅读地图
 
@@ -57,12 +57,12 @@ Electron 桌面壳
 |---|---|---|
 | 加载视频信息并显示 | 主进程调用 `ffprobe`，解析时长、分辨率、帧率、容器、编码、文件大小 | 已实现，真实文件验证通过 |
 | 获取并显示缩略图 | 主进程调用 `ffmpeg` 抽单帧，输出 320×180 JPEG，以 data URL 交给 UI | 已实现，缩略图失败可降级 |
-| 用 FFmpeg 命令行转换 | `spawn(executablePath, args, { shell: false })`，参数数组构造 | 已实现，MP4/MKV 真实转换通过 |
-| 自己做一些优化 | 串行队列、临时文件、冲突避让、取消、拖拽、快捷键、关闭保护、错误复制、日志 | 已实现 |
-| 会话总结与开发者决策记录 | `docs/AI_DEVELOPMENT_LOG.md` 记录每阶段决策、反馈、RED/GREEN；`docs/SESSION_SUMMARY.md` 已形成 M1 版本 | 已有总结；M6 更新最终版 |
-| 项目提交 GitHub | 已有基线提交 `87d5395`、`1f74c6d` 推送到 `origin/main`；M1 变更待提交 | 进行中 |
+| 用 FFmpeg 命令行转换 | `spawn(executablePath, args, { shell: false })`，参数数组构造 | 已实现，MP4/MKV/WebM/MP3 真实转换通过 |
+| 自己做一些优化 | 串行队列、临时文件、冲突避让、取消、拖拽、快捷键、关闭保护、错误复制、日志、真实编码器能力探测 | 已实现 |
+| 会话总结与开发者决策记录 | `docs/AI_DEVELOPMENT_LOG.md` 记录每阶段决策、反馈、RED/GREEN；`docs/SESSION_SUMMARY.md` 已更新到 M2 | 已有总结；M6 更新最终版 |
+| 项目提交 GitHub | 已有基线提交 `87d5395`、`1f74c6d` 推送到 `origin/main`；M1 基线为 `0681c38`；M2 已本地提交，推送待网络恢复 | 进行中 |
 | 界面选型与“客户端”关联 | Electron 桌面窗口、原生文件/目录选择器、本地路径、真实子进程 | 客户端关联已成立；整体视觉方向待确认 |
-| 设计给人用、自己测试过 | 93 个自动化测试、真实 FFmpeg 集成、无 PATH 的目录版/安装版 E2E、截图和证据日志 | 核心功能和 Windows 安装包已验证；独立干净 VM 和卸载待 M6 |
+| 设计给人用、自己测试过 | 112 个自动化测试、真实 FFmpeg 集成、无 PATH 的目录版/安装版 E2E、截图和证据日志 | 核心功能和 Windows 打包版已验证；独立干净 VM 和卸载待 M6 |
 
 这张表很重要：它既说明项目做了什么，也说明现在还**不能**对外宣称什么。面试或答辩时，边界要讲清楚。
 
@@ -124,7 +124,7 @@ flowchart LR
 | 层 | 主要文件 | 可以做什么 | 不可以做什么 |
 |---|---|---|---|
 | Renderer | `src/App.tsx`、`src/components/*` | 维护 UI 状态、调用 `window.desktopAPI`、渲染界面 | 不能导入 `node:fs`、`node:child_process`、Electron 模块 |
-| Preload | `electron/preload/index.ts`、`api.ts` | 通过 `contextBridge` 暴露 13 个受控方法 | 不能暴露完整 `ipcRenderer`、`fs`、通用命令执行 |
+| Preload | `electron/preload/index.ts`、`api.ts` | 通过 `contextBridge` 暴露 14 个受控方法 | 不能暴露完整 `ipcRenderer`、`fs`、通用命令执行 |
 | Main | `electron/main/*`、`services/*` | 文件对话框、FFprobe/FFmpeg、队列、日志、系统 Shell | 不能把 DOM/React 逻辑塞进来 |
 | 外部进程 | `ffmpeg.exe`、`ffprobe.exe` | 探测、缩略图、转码 | 不通过 shell 解释参数 |
 
@@ -234,7 +234,7 @@ webPreferences: {
 
 ## 5. IPC：界面和主进程之间的唯一通道
 
-### 5.1 13 个受控方法
+### 5.1 14 个受控方法
 
 `shared/ipc.ts` 定义了 `DesktopAPI`。preload 只暴露这些方法：
 
@@ -242,6 +242,7 @@ webPreferences: {
 |---|---|---|
 | `getAppInfo()` | `app:get-info` | 应用版本、Electron/Chrome/Node 版本、平台 |
 | `getFfmpegStatus()` | `ffmpeg:get-status` | 返回真实 FFmpeg/FFprobe 是否可用、版本、来源 |
+| `getConversionCapabilities()` | `conversion:get-capabilities` | 真实执行 `ffmpeg -encoders`，返回编码器和格式可用性 |
 | `selectVideos()` | `media:select-videos` | 打开系统多选文件对话框，导入并探测 |
 | `importVideos(paths)` | `media:import-paths` | 接收拖拽路径，校验后导入 |
 | `getPathForFile(file)` | 不走 IPC | preload 里用 `webUtils.getPathForFile` 取本地路径 |
@@ -426,64 +427,101 @@ for (const item of incoming) {
 
 ## 7. 转换设置与 FFmpeg 参数
 
-### 7.1 输出格式
+### 7.1 输出格式与能力探测
 
-当前只开放两种容器：
+当前开放四种输出 profile，全部由 `shared/conversion.ts` 的 `OUTPUT_PROFILES` 描述：
 
-| 格式 | 扩展名 | 特点 |
-|---|---|---|
-| MP4 | `.mp4` | 兼容性最好，适合分享 |
-| MKV | `.mkv` | 开放容器，适合多轨或后续处理 |
+| 格式 | 扩展名 | 视频编码 | 音频编码 | 特点 |
+|---|---|---|---|---|
+| MP4 | `.mp4` | H.264 | AAC | 兼容性最好，适合分享 |
+| MKV | `.mkv` | H.264 | AAC | 开放容器，适合后续处理 |
+| WebM | `.webm` | VP9 | Opus | 适合网页和开放容器 |
+| MP3 | `.mp3` | 无 | MP3 | 只导出音频，不生成视频轨 |
 
-没有开放 H.265、MOV、WebM，也没有做“动态检测编码器”。这是明确的范围控制：功能少一点，但每一条都真实可用。
+UI、参数构造、扩展名和能力检测都读取同一份 profile，不在组件里写 `if (format === ...)` 的格式特判。
+
+启动时 `FfmpegCapabilityService` 会真实执行：
+
+```text
+ffmpeg -hide_banner -encoders
+```
+
+然后解析 `libx264`、`aac`、`libvpx-vp9`、`libopus`、`libmp3lame` 是否存在：
+
+- MP4 / MKV 需要 `libx264` + `aac`；
+- WebM 需要 `libvpx-vp9` + `libopus`；
+- MP3 需要 `libmp3lame`。
+
+缺失编码器的格式会在 UI 中禁用并显示原因。FFmpeg 不可用或输出解析失败时返回全 false，不会把“未知”显示成“可用”。成功结果会缓存；失败结果不永久缓存，下一次请求会重新检测。
+
+没有开放 H.265、MOV、GIF、AV1；这些格式不在当前 P0/P1 范围。
 
 ### 7.2 质量预设
 
-`shared/conversion.ts` 定义了三个 H.264 预设：
+同一套质量预设按 profile 映射到不同的编码参数（`shared/conversion.ts`）：
 
-| 预设 | CRF | 说明 |
-|---|---:|---|
-| `compatible` 兼容优先 | 23 | 默认，兼容性与体积平衡 |
-| `quality` 质量优先 | 20 | 画质更好，文件更大 |
-| `compact` 体积优先 | 28 | 文件更小，画质下降 |
+| 预设 | H.264 CRF | VP9 CRF | 音频码率 | 说明 |
+|---|---:|---:|---:|---|
+| `compatible` 兼容优先 | 23 | 32 | 192 kbps | 默认，兼容性与体积平衡 |
+| `quality` 质量优先 | 20 | 28 | 256 kbps | 画质更好，文件更大 |
+| `compact` 体积优先 | 28 | 36 | 128 kbps | 文件更小，画质下降 |
 
-CRF 是 x264 的恒定质量参数。数值越小质量越高、文件越大；数值越大质量越低、文件越小。
+CRF 是恒定质量参数，数值越小质量越高、文件越大。VP9 的 CRF 标尺与 x264 不同，所以使用另一组数值；WebM 还使用 `-b:v 0` 开启纯恒定质量模式。
+
+MP3 没有视频 CRF，只使用音频码率。UI 在 MP3 下显示“音频质量”，不再展示视频 CRF 文案。
 
 ### 7.3 参数构造
 
 `electron/main/services/conversion/args.ts` 的 `buildConversionArgs()` 生成参数数组，不拼接 shell 字符串。
 
-核心参数：
+公共部分：
 
 ```text
 -hide_banner -v error -y
 -i <input>
--map 0:v:0
--sn
-[有音轨] -map 0:a:0? -c:a aac -b:a 192k
-[无音轨] -an
--c:v libx264 -preset medium -crf <20|23|28> -pix_fmt yuv420p
-[MP4] -movflags +faststart
 -stats_period 0.2 -progress pipe:1 -nostats
 <output>
 ```
 
-逐个解释：
+视频格式（MP4 / MKV / WebM）先取第一条视频流并禁用字幕：
 
-- `-map 0:v:0`：只取第一条视频流，不复制所有轨道；
-- `-sn`：不保留字幕轨；
-- `-map 0:a:0?`：取第一条音频流，`?` 表示没有音频也不报错；
-- `-c:a aac -b:a 192k`：AAC 192 kbps；
-- `-c:v libx264`：H.264 编码器；
-- `-preset medium`：x264 速度/压缩率平衡；
-- `-crf`：质量预设；
-- `-pix_fmt yuv420p`：提高播放器兼容性；
-- `-movflags +faststart`：只对 MP4 使用，把索引放到文件头，便于网络播放；
-- `-stats_period 0.2`：缩短进度刷新间隔，短视频也能看到中间进度；
-- `-progress pipe:1`：把结构化进度写到 stdout；
-- `-nostats`：关闭 stderr 的冗长统计。
+```text
+-map 0:v:0 -sn
+```
 
-一个等价的命令行示例（仅用于理解，实际代码使用参数数组）：
+有音轨时：
+
+```text
+-map 0:a:0? -c:a <aac|libopus> -b:a <192|256|128>k
+```
+
+无音轨时明确写 `-an`，不会凭空生成音轨。
+
+视频编码按 profile 分支：
+
+```text
+# MP4 / MKV
+-c:v libx264 -preset medium -crf <23|20|28> -pix_fmt yuv420p
+
+# WebM
+-c:v libvpx-vp9 -crf <32|28|36> -pix_fmt yuv420p `
+-b:v 0 -deadline good -cpu-used 4 -row-mt 1
+```
+
+MP4 额外加 `-movflags +faststart`，把索引放到文件头；MKV/WebM 不加。
+
+MP3 是另一条明确分支：
+
+```text
+-vn
+-map 0:a:0
+-c:a libmp3lame
+-b:a <192|256|128>k
+```
+
+MP3 不构造 `-map 0:v:0`，也不构造视频编码参数；无音轨源会在入队阶段直接失败，不会启动 FFmpeg。
+
+一个等价的 MP4 命令行示例（仅用于理解，实际代码使用参数数组）：
 
 ```powershell
 ffmpeg -hide_banner -v error -y `
@@ -496,18 +534,58 @@ ffmpeg -hide_banner -v error -y `
   "D:\输出\测试 视频_converted.mp4"
 ```
 
+WebM 示例：
+
+```powershell
+ffmpeg -hide_banner -v error -y `
+  -i "D:\素材\测试 视频.mp4" `
+  -map 0:v:0 -sn `
+  -map 0:a:0? -c:a libopus -b:a 192k `
+  -c:v libvpx-vp9 -crf 32 -pix_fmt yuv420p `
+  -b:v 0 -deadline good -cpu-used 4 -row-mt 1 `
+  -stats_period 0.2 -progress pipe:1 -nostats `
+  "D:\输出\测试 视频_converted.webm"
+```
+
+MP3 示例：
+
+```powershell
+ffmpeg -hide_banner -v error -y `
+  -i "D:\素材\测试 视频.mp4" `
+  -vn -map 0:a:0 `
+  -c:a libmp3lame -b:a 192k `
+  -stats_period 0.2 -progress pipe:1 -nostats `
+  "D:\输出\测试 视频_converted.mp3"
+```
+
+逐个解释：
+
+- `-map 0:v:0`：只取第一条视频流，不复制所有轨道；
+- `-sn`：不保留字幕轨；
+- `-map 0:a:0?`：取第一条音频流，`?` 表示没有音频也不报错；
+- `-c:a aac|libopus|libmp3lame`：由 profile 决定音频编码器；
+- `-c:v libx264|libvpx-vp9`：由 profile 决定视频编码器；
+- `-preset medium`：x264 速度/压缩率平衡；VP9 使用 `-deadline good -cpu-used 4`；
+- `-crf`：质量预设，H.264 和 VP9 使用不同数值；
+- `-b:v 0`：VP9 纯恒定质量模式；
+- `-pix_fmt yuv420p`：提高播放器兼容性；
+- `-movflags +faststart`：只对 MP4 使用；
+- `-stats_period 0.2`：缩短进度刷新间隔，短视频也能看到中间进度；
+- `-progress pipe:1`：把结构化进度写到 stdout；
+- `-nostats`：关闭 stderr 的冗长统计。
+
 ### 7.4 为什么不允许 renderer 传自定义参数
 
 如果开放“自定义 FFmpeg 参数”，就等于给页面一个任意命令执行入口。用户或恶意脚本可以传 `-f`、任意输入输出路径、滤镜甚至其他协议。
 
 当前设计把“用户能选什么”限制为：
 
-- 输出格式：MP4 / MKV；
+- 输出格式：MP4 / MKV / WebM / MP3；
 - 质量预设：三档；
 - 输出目录：系统目录选择器；
 - 源文件：经过校验的本地视频路径。
 
-FFmpeg 参数完全由主进程根据这些枚举值构造。功能少一点，但安全边界清楚。
+FFmpeg 参数完全由主进程根据这些枚举值和能力矩阵构造。格式更多了，但安全边界仍然清楚。
 
 ### 7.5 输出命名与冲突
 
@@ -583,7 +661,7 @@ stateDiagram-v2
 2. 校验源路径数组非空、最多 100 个；
 3. 校验输出目录；
 4. 对源路径去重（大小写不敏感）；
-5. 逐个校验源文件；
+5. 逐个校验源文件；仅音频格式（MP3）额外用真实 FFprobe 检查 `hasAudio`，无音轨直接失败，不启动 FFmpeg；
 6. 为每个有效源文件找不冲突的输出名；
 7. 预占输出名；
 8. 创建 `queued` 任务，保存该任务的设置快照；
@@ -615,7 +693,7 @@ while (true) {
     });
 
     job.outputPath = result.outputPath;
-    job.progress = 100;
+    job.progress = 100; // runner 已通过退出码 + 文件 + FFprobe 编码校验
     job.status = 'completed';
   } catch (error) {
     // 取消 → canceled；其他错误 → failed
@@ -698,8 +776,10 @@ while (true) {
 9. 检查最终输出路径不存在（防止覆盖）
 10. rename 临时文件 → 最终文件
 11. 检查最终文件大小 > 0
-12. 返回 outputPath
-13. finally 删除临时文件
+12. 用随包 FFprobe 校验输出编码/轨道与所选 profile 一致
+13. 校验失败时删除最终输出并抛错
+14. 返回 outputPath
+15. finally 删除临时文件
 ```
 
 为什么启动时要重新 probe，而不是直接复用导入时的 metadata？
@@ -743,9 +823,15 @@ progress=end
 2. 临时输出文件存在且大小 > 0；
 3. 最终输出路径在 rename 前不存在；
 4. rename 成功；
-5. 最终输出文件存在且大小 > 0。
+5. 最终输出文件存在且大小 > 0；
+6. FFprobe 输出与 profile 一致：
+   - 视频输出必须包含视频轨，编码等于 H.264 或 VP9；
+   - 源文件有音轨时，输出必须包含预期音频编码（AAC / Opus）；
+   - 源文件无音轨时，输出不能凭空多出音轨；
+   - MP3 必须只有音频、没有视频轨；
+   - 输出时长不能为 0。
 
-任何一步失败都会进入失败/取消分支，临时文件在 `finally` 中清理。
+任何一步失败都会进入失败/取消分支，临时文件在 `finally` 中清理；输出编码校验失败时还会删除已经 rename 的最终文件，避免把坏输出留给用户。
 
 ### 9.4 错误与日志摘要
 
@@ -911,7 +997,7 @@ devTools: !isPackaged
 
 ### 12.3 IPC 层
 
-- preload 只暴露 13 个方法；
+- preload 只暴露 14 个方法；
 - 不暴露 `ipcRenderer`、`fs`、`child_process`、`dialog`；
 - 每个 handler 校验 sender 是否是当前主窗口；
 - 每个入口做参数形状、类型、数量、路径校验；
@@ -1008,9 +1094,10 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 | `test/phase-03-conversion.test.tsx` | 参数、进度、队列、真实转换、取消、失败、UI | 23 |
 | `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、UI | 14 |
 | `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 | 6 |
-| **合计** | | **93** |
+| `test/phase-06-formats.test.tsx` | 能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI | 19 |
+| **合计** | | **112** |
 
-2026-10-21 的真实结果：5 个测试文件、93 个测试全部通过，无 skip。
+2026-10-22 的真实结果：6 个测试文件、112 个测试全部通过，无 skip。
 
 ### 14.2 测试层次
 
@@ -1028,13 +1115,16 @@ UI 不展示原始堆栈；详细 stderr 在日志和可展开的“查看详细
 - 输出名冲突；
 - 取消真实子进程；
 - 临时文件清理；
-- MP4/MKV 真实输出；
+- MP4/MKV/WebM/MP3 真实输出；
+- 真实 `ffmpeg -encoders` 能力探测；
+- 无音轨 MP3 在入队阶段拒绝；
+- 输出编码/轨道与 profile 不符时失败并清理；
 - 进度来自真实 FFmpeg；
 - 失败任务不阻塞后续任务；
 - 未完成任务不允许打开输出；
 - 打包版/安装版在无系统 PATH 时使用 `source: "bundled"`；
-- 中文/空格路径视频的真实拖拽导入、缩略图和 MP4 转换；
-- 用随包 `ffprobe` 验证输出为 H.264 640×360。
+- 中文/空格路径视频的真实拖拽导入、缩略图和 MP4/WebM/MP3 转换；
+- 用随包 `ffprobe` 验证 H.264/AAC、VP9/Opus 和仅 MP3 音频输出。
 
 ### 14.4 测试先行
 
@@ -1096,17 +1186,18 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 - `npm run dist:win` 通过；
 - 自定义应用图标；
 - FFmpeg/FFprobe、DLL、LICENSE、README 和 manifest 随包；
-- 目录版和安装版在移除 PATH 后都返回 `source: "bundled"`；
-- 通过 CDP 做真实拖拽导入、缩略图和真实 MP4 转换；
-- NSIS 静默安装到新目录，安装器退出码 0。
+- 目录版、安装版和 zip 解压版在移除 PATH 后都返回 `source: "bundled"`；
+- 通过 CDP 做真实拖拽导入、缩略图和真实 MP4/WebM/MP3 转换；
+- NSIS 静默安装到新目录，安装器退出码 0；
+- NSIS 静默卸载，安装目录清理。
 
 尚未完成：
 
+- M2 功能冻结后重新生成安装包和 zip；
 - 独立干净 Windows VM 的安装、取消、打开输出、卸载；
 - 代码签名和 SmartScreen 信誉；
-- 完整目录 zip 的解压运行抽测；
 - GPL 合规的法律确认和最终源码提供方式；
-- M2/M3 新格式与高级设置。
+- M3 高级设置、命令预览和动态 ETA。
 
 ### 15.4 FFmpeg 分发与许可证
 
@@ -1290,19 +1381,28 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 
 不要在这一阶段做大规模视觉重写。先保证功能闭环，再谈视觉。
 
-### 17.6 M1：交付基线（已完成）
+### 17.6 M1 / M2：交付基线与格式能力（已完成）
 
-已完成：
+M1 已完成：
 
 - 安装包和完整目录 zip；
 - 自定义图标；
 - FFmpeg 随包；
 - 无 PATH 的目录版/安装版真实转换；
 - `THIRD_PARTY_NOTICES.md`、`TEST_PLAN.md`；
-- README、FFMPEG、DELIVERY_PLAN 校准；
-- 93 个测试全绿。
+- README、FFMPEG、DELIVERY_PLAN 校准。
 
-下一步是 M2 格式能力层 + WebM/MP3；M6 再做最终安装包、独立干净 VM、`SESSION_SUMMARY.md`、GitHub Release。
+M2 已完成：
+
+- 真实 `ffmpeg -encoders` 能力矩阵；
+- OutputProfile 驱动 MP4/MKV/WebM/MP3；
+- WebM VP9 + Opus、MP3 仅音频；
+- MP3 无音轨入队拒绝；
+- 输出 FFprobe 编码/轨道校验；
+- 打包版无 PATH 下 MP4/WebM/MP3 各一次真实转换；
+- 112 个测试全绿。
+
+下一步是 M3 高级设置、只读命令预览和动态 ETA；M6 再做最终安装包、独立干净 VM、`SESSION_SUMMARY.md`、GitHub Release。
 
 ### 17.7 给弱模型的每轮任务模板
 
@@ -1364,15 +1464,16 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 ### 18.2 可以强调的工程点
 
 - 主进程 / preload / renderer 三层边界；
-- 13 个最小 preload API；
+- 14 个最小 preload API；
 - renderer 不能执行任意命令；
 - `spawn` 参数数组，不拼 shell；
 - 串行队列和任务状态机；
 - 临时文件 + rename，避免半成品；
 - 输出名冲突不覆盖；
 - 取消真实子进程；
-- 100% 只在文件验证后出现；
-- 93 个测试和真实打包版/安装版无 PATH E2E；
+- 100% 只在退出码、文件和 FFprobe 编码校验后出现；
+- 真实编码器能力探测，不显示假支持；
+- 112 个测试和真实打包版/安装版无 PATH E2E；
 - 安装包内置 FFmpeg，`source: "bundled"` 可验证；
 - 开发日志保留了决策、反馈、RED/GREEN 和真实问题。
 
@@ -1384,7 +1485,7 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 - “卸载流程已经自动化验证”（没有）；
 - “所有系统窗口都自动化测试过”（没有）；
 - “视觉设计已经定稿”（没有）；
-- “WebM/MP3/高级设置已经完成”（没有，属于 M2/M3）；
+- “高级设置、命令预览、动态 ETA 已经完成”（没有，属于 M3）；
 - “GPL 合规已经由法律确认”（没有，只保留了声明和源码获取方式）；
 - “所有场景都覆盖了”（多文件拖拽、干净 VM、代码签名等还没做）。
 
@@ -1427,7 +1528,7 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 
 ---
 
-## 21. 当前限制与 M2/M6 待办
+## 21. 当前限制与 M3/M6 待办
 
 ### 21.1 当前限制
 
@@ -1435,17 +1536,17 @@ npm run e2e:packaged    # 无 PATH 的打包版真实 E2E
 - 输出目录、格式、质量预设不持久化；
 - 不支持字幕轨保留；
 - 不做硬件加速；
-- 只有 MP4/MKV 和 H.264 预设；WebM/MP3 待 M2；
+- 当前格式为 MP4/MKV/WebM/MP3；MOV、GIF、H.265、AV1 不在 P0/P1 范围；
+- 高级设置、只读命令预览、动态 ETA 待 M3；
 - 视觉方向尚未最终确定；
 - 原生关闭对话框的真实点击未自动化；
 - 系统“打开文件/打开目录”窗口未反复自动化；
 - 多文件拖拽有单元测试，但真实 E2E 只覆盖单文件；
 - 独立干净 Windows VM 的安装/取消/打开输出/卸载尚未执行；
 - 安装包未代码签名，可能出现 SmartScreen 提示；
-- `docs/SESSION_SUMMARY.md` 已创建 M1 版本，M6 需要更新最终版；`docs/TEST_PLAN.md` 已创建；
-- GPL 合规仍需维护者确认；
-- 完整目录 zip 仍需解压运行抽测；
-- M2/M3 功能尚未开始。
+- 当前安装包和 zip 是 M1 基线，M6 需要基于 M2–M5 最终代码重建；
+- `docs/SESSION_SUMMARY.md` 已更新到 M2，M6 需要更新最终版；
+- GPL 合规仍需维护者确认。
 
 ### 21.2 下一步计划
 
@@ -1453,11 +1554,10 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 
 摘要：
 
-1. M1 已完成：FFmpeg 随包、安装包打样、环境面板移除、无 PATH 真实转换；
-2. 进入 M2：格式能力层、WebM/MP3；
-3. 再做 M3：高级设置、只读命令预览、动态剩余时间；
-4. 功能冻结后再做视觉；
-5. 最后做最终安装包、独立干净 VM、`SESSION_SUMMARY.md` 和 GitHub Release。
+1. M1/M2 已完成：FFmpeg 随包、无 PATH 真实转换、能力探测、WebM/MP3；
+2. 进入 M3：高级设置、只读命令预览、动态剩余时间；
+3. 再做 M4 可选 polish 与 M5 视觉；
+4. 最后做最终安装包、独立干净 VM、`SESSION_SUMMARY.md` 和 GitHub Release。
 
 ---
 
@@ -1466,10 +1566,10 @@ P0/P1 的详细范围、验收标准和执行顺序以 [DELIVERY_PLAN.md](DELIVE
 如果只能记住五件事：
 
 1. **这是桌面客户端，不是网页**：原生文件对话框、本地路径、真实 FFmpeg 子进程。
-2. **界面和系统能力是分开的**：React 只调用 13 个 preload 方法，主进程负责文件、进程和队列。
-3. **转换是真的**：`spawn` 参数数组、真实进度、临时文件、输出校验、不覆盖同名文件。
-4. **失败是被设计过的**：坏文件、无音轨、缩略图失败、取消、关闭窗口、FFmpeg 缺失都有路径。
-5. **证据比自述重要**：93 个测试、真实 RED/GREEN、无 PATH 的打包版/安装版 E2E、日志和截图，才是项目完成度的证明。
+2. **界面和系统能力是分开的**：React 只调用 14 个 preload 方法，主进程负责文件、进程和队列。
+3. **转换是真的**：`spawn` 参数数组、真实进度、临时文件、FFprobe 输出校验、不覆盖同名文件。
+4. **失败是被设计过的**：坏文件、无音轨、缩略图失败、取消、关闭窗口、FFmpeg 缺失、编码不符都有路径。
+5. **证据比自述重要**：112 个测试、真实 RED/GREEN、无 PATH 的打包版/安装版 E2E、日志和截图，才是项目完成度的证明。
 
 ---
 

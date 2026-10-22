@@ -10,12 +10,13 @@ import type {
   ConversionSettings,
 } from '../../../../shared/conversion';
 import {
+  isAudioOnlyFormat,
   isOutputFormat,
   isQualityPresetId,
 } from '../../../../shared/conversion';
 import { createLogger } from '../logger';
 import type { FfmpegService } from '../ffmpeg/status';
-import { validateVideoPath } from '../media/probe';
+import { probeMedia, validateVideoPath } from '../media/probe';
 import {
   findUniqueOutputPath,
   pathExists,
@@ -35,6 +36,8 @@ const logger = createLogger('conversion-queue');
 export interface SourceValidation {
   ok: boolean;
   path?: string;
+  /** 仅音频 profile 需要；由真实 ffprobe 探测，不根据扩展名猜测。 */
+  hasAudio?: boolean;
   error?: string;
 }
 
@@ -44,7 +47,10 @@ export interface ConversionQueueDependencies {
     settings: ConversionSettings,
     options: RunConversionOptions,
   ) => Promise<ConversionRunResult>;
-  validateSource: (sourcePath: string) => Promise<SourceValidation>;
+  validateSource: (
+    sourcePath: string,
+    settings: ConversionSettings,
+  ) => Promise<SourceValidation>;
   validateOutputDirectory: (
     directory: string,
   ) => Promise<OutputDirectoryValidation>;
@@ -129,19 +135,30 @@ export class ConversionQueue {
       }
       seen.add(key);
 
-      const sourceValidation = await this.dependencies.validateSource(sourcePath);
+      const sourceValidation = await this.dependencies.validateSource(
+        sourcePath,
+        normalizedSettings,
+      );
       if (!sourceValidation.ok || !sourceValidation.path) {
-        const failed = this.createJob({
-          sourcePath,
-          fileName: basename(sourcePath) || sourcePath,
-          outputPath: '',
-          status: 'failed',
-          error: sourceValidation.error ?? '源文件无效',
-          finishedAt: this.now(),
-        });
-        this.jobs.push(failed);
-        this.emit(failed);
-        created.push({ ...failed });
+        created.push(
+          this.recordFailure(
+            sourcePath,
+            sourceValidation.error ?? '源文件无效',
+          ),
+        );
+        continue;
+      }
+
+      if (
+        isAudioOnlyFormat(normalizedSettings.format) &&
+        sourceValidation.hasAudio === false
+      ) {
+        created.push(
+          this.recordFailure(
+            sourceValidation.path,
+            '该视频没有音轨，无法导出 MP3',
+          ),
+        );
         continue;
       }
 
@@ -329,6 +346,20 @@ export class ConversionQueue {
     }
   }
 
+  private recordFailure(sourcePath: string, error: string): ConversionJob {
+    const failed = this.createJob({
+      sourcePath,
+      fileName: basename(sourcePath) || sourcePath,
+      outputPath: '',
+      status: 'failed',
+      error,
+      finishedAt: this.now(),
+    });
+    this.jobs.push(failed);
+    this.emit(failed);
+    return { ...failed };
+  }
+
   private createJob(input: {
     sourcePath: string;
     fileName: string;
@@ -412,11 +443,37 @@ export function createConversionQueue(
   return new ConversionQueue({
     runJob: (job, settings, runOptions) =>
       runner.run(job, settings, runOptions),
-    validateSource: async (sourcePath) => {
+    validateSource: async (sourcePath, settings) => {
       const validation = await validateVideoPath(sourcePath);
-      return validation.ok
-        ? { ok: true, path: validation.path }
-        : { ok: false, error: validation.error };
+      if (!validation.ok) {
+        return { ok: false, error: validation.error };
+      }
+
+      if (!isAudioOnlyFormat(settings.format)) {
+        return { ok: true, path: validation.path };
+      }
+
+      const status = await options.ffmpeg.getStatus();
+      if (!status.available || !status.ffprobePath) {
+        return {
+          ok: false,
+          error: status.error ?? 'FFprobe 未就绪，无法检查音轨',
+        };
+      }
+
+      try {
+        const metadata = await probeMedia(status.ffprobePath, validation.path);
+        return {
+          ok: true,
+          path: validation.path,
+          hasAudio: metadata.hasAudio,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : '无法读取音轨信息',
+        };
+      }
     },
     validateOutputDirectory,
     findOutputPath: findUniqueOutputPath,

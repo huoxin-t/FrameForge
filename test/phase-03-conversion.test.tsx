@@ -33,6 +33,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import App from '../src/App';
 import { createTestLogger } from './helpers/test-logger';
+import { readyCapabilities } from './helpers/capabilities';
 import {
   DESKTOP_API_KEYS,
   IPC_CHANNELS,
@@ -845,6 +846,7 @@ describe('阶段 3 / 转换 preload 契约', () => {
       'cancelConversion',
       'copyText',
       'getAppInfo',
+      'getConversionCapabilities',
       'getFfmpegStatus',
       'getPathForFile',
       'importVideos',
@@ -976,6 +978,7 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
   const api: DesktopAPI = {
     getAppInfo: vi.fn().mockResolvedValue(appInfo),
     getFfmpegStatus: vi.fn().mockResolvedValue(readyStatus),
+    getConversionCapabilities: vi.fn().mockResolvedValue(readyCapabilities),
     selectVideos: vi.fn().mockResolvedValue([]),
     importVideos: vi.fn().mockResolvedValue([]),
     getPathForFile: vi.fn(() => ''),

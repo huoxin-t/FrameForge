@@ -12,6 +12,7 @@ import { VIDEO_EXTENSIONS } from '../../../shared/media';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { ConversionUpdate } from '../../../shared/conversion';
 import { buildAppInfo } from '../services/app-info';
+import { FfmpegCapabilityService } from '../services/ffmpeg/capabilities';
 import { FfmpegService } from '../services/ffmpeg/status';
 import { resolveFfmpegPaths } from '../services/ffmpeg/resolver';
 import {
@@ -41,6 +42,7 @@ const logger = createLogger('ipc');
 
 export interface IpcServices {
   ffmpeg: FfmpegService;
+  capabilities?: FfmpegCapabilityService;
   media: MediaService;
   conversion?: ConversionQueue;
 }
@@ -64,6 +66,12 @@ export function registerIpcHandlers(
         }),
     });
   const mediaService = services.media ?? createMediaService(ffmpegService);
+
+  const capabilityService =
+    services.capabilities ??
+    new FfmpegCapabilityService({
+      getFfmpegStatus: () => ffmpegService.getStatus(),
+    });
 
   const sendConversionUpdate = (update: ConversionUpdate) => {
     const mainWindow = getMainWindow();
@@ -117,6 +125,14 @@ export function registerIpcHandlers(
       channel: IPC_CHANNELS.getFfmpegStatus,
     });
     return ffmpegService.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getConversionCapabilities, async (event) => {
+    assertTrusted(event, IPC_CHANNELS.getConversionCapabilities);
+    logger.info('Handled IPC request', {
+      channel: IPC_CHANNELS.getConversionCapabilities,
+    });
+    return capabilityService.getCapabilities();
   });
 
   ipcMain.handle(IPC_CHANNELS.selectVideos, async (event) => {

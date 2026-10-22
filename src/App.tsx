@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent } from 'react';
-import type {
-  ConversionJob,
-  ConversionUpdate,
-  OutputFormat,
-  QualityPresetId,
+import {
+  getOutputFormat,
+  type ConversionJob,
+  type ConversionUpdate,
+  type OutputFormat,
+  type QualityPresetId,
 } from '../shared/conversion';
+import type { ConversionCapabilities } from '../shared/capabilities';
 import type { FfmpegStatus, MediaItem } from '../shared/media';
 import { AppShell } from './components/AppShell';
 import { ConversionSettings } from './components/ConversionSettings';
@@ -18,6 +20,10 @@ import type { AppInfoState, FfmpegState } from './types/ui';
 export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfoState>({ status: 'loading' });
   const [ffmpeg, setFfmpeg] = useState<FfmpegState>({ status: 'loading' });
+  const [capabilities, setCapabilities] =
+    useState<ConversionCapabilities | null>(null);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -32,10 +38,23 @@ export default function App() {
   const mountedRef = useRef(true);
   const dragDepthRef = useRef(0);
 
-  const convertibleItems = useMemo(
+  const validItems = useMemo(
     () => items.filter((item) => item.metadata !== null && item.error === null),
     [items],
   );
+  const selectedProfile = getOutputFormat(format);
+  const convertibleItems = useMemo(
+    () =>
+      validItems.filter(
+        (item) =>
+          selectedProfile.kind !== 'audio' || item.metadata?.hasAudio === true,
+      ),
+    [validItems, selectedProfile.kind],
+  );
+  const audioOnlyExcludedCount =
+    selectedProfile.kind === 'audio'
+      ? validItems.filter((item) => item.metadata?.hasAudio !== true).length
+      : 0;
   const hasActiveJobs = jobs.some(
     (job) => job.status === 'queued' || job.status === 'running',
   );
@@ -46,6 +65,36 @@ export default function App() {
       mountedRef.current = false;
     };
   }, []);
+
+  const loadCapabilities = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api) {
+      setCapabilitiesError('桌面桥接未加载');
+      setCapabilitiesLoading(false);
+      return;
+    }
+
+    setCapabilitiesLoading(true);
+    try {
+      const next = await api.getConversionCapabilities();
+      if (mountedRef.current) {
+        setCapabilities(next);
+        setCapabilitiesError(next.error);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setCapabilitiesError(toUserMessage(error));
+      }
+    } finally {
+      if (mountedRef.current) {
+        setCapabilitiesLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCapabilities();
+  }, [loadCapabilities]);
 
   useEffect(() => {
     const api = window.desktopAPI;
@@ -101,6 +150,22 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!capabilities) {
+      return;
+    }
+
+    const current = capabilities.formats.find((item) => item.format === format);
+    if (current?.available) {
+      return;
+    }
+
+    const fallback = capabilities.formats.find((item) => item.available);
+    if (fallback) {
+      setFormat(fallback.format);
+    }
+  }, [capabilities, format]);
+
   const handleRetryFfmpeg = useCallback(async () => {
     const api = window.desktopAPI;
     if (!api) {
@@ -114,12 +179,13 @@ export default function App() {
       if (mountedRef.current) {
         setFfmpeg(toFfmpegState(status));
       }
+      await loadCapabilities();
     } catch (error) {
       if (mountedRef.current) {
         setFfmpeg({ status: 'error', message: toUserMessage(error) });
       }
     }
-  }, []);
+  }, [loadCapabilities]);
 
   const canImport = ffmpeg.status === 'ready' && !importing;
 
@@ -271,6 +337,11 @@ export default function App() {
     }
   }, []);
 
+  const handleFormatChange = useCallback((next: OutputFormat) => {
+    setFormat(next);
+    setConversionError(null);
+  }, []);
+
   const handleStartConversion = useCallback(async () => {
     const api = window.desktopAPI;
     if (
@@ -280,6 +351,17 @@ export default function App() {
       !outputDirectory ||
       convertibleItems.length === 0
     ) {
+      return;
+    }
+
+    const selectedCapability = capabilities?.formats.find(
+      (item) => item.format === format,
+    );
+    if (!selectedCapability?.available) {
+      setConversionError(
+        selectedCapability?.reason ??
+          '当前格式缺少可用编码器，请选择其他输出格式',
+      );
       return;
     }
 
@@ -309,6 +391,7 @@ export default function App() {
       }
     }
   }, [
+    capabilities,
     convertibleItems,
     ffmpeg.status,
     format,
@@ -485,18 +568,27 @@ export default function App() {
         </div>
 
         <aside className="min-w-0 space-y-4">
-          {convertibleItems.length > 0 ? (
+          {validItems.length > 0 ? (
             <ConversionSettings
               format={format}
               qualityPreset={qualityPreset}
               outputDirectory={outputDirectory}
               itemCount={convertibleItems.length}
               starting={starting}
-              disabled={ffmpeg.status !== 'ready' || hasActiveJobs}
+              disabled={
+                ffmpeg.status !== 'ready' ||
+                hasActiveJobs ||
+                capabilitiesLoading
+              }
               error={conversionError}
-              onFormatChange={setFormat}
+              capabilities={capabilities}
+              capabilitiesLoading={capabilitiesLoading}
+              capabilitiesError={capabilitiesError}
+              audioOnlyExcludedCount={audioOnlyExcludedCount}
+              onFormatChange={handleFormatChange}
               onQualityPresetChange={setQualityPreset}
               onChooseDirectory={handleChooseDirectory}
+              onRefreshCapabilities={loadCapabilities}
               onStart={handleStartConversion}
             />
           ) : null}

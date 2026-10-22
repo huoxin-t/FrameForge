@@ -2,11 +2,11 @@
 
 本地视频格式转换桌面客户端。用 Electron + React + TypeScript 调用真实的 `ffmpeg` / `ffprobe`，完成视频导入、媒体信息读取、缩略图、格式转换和串行任务队列。
 
-> 当前进度：**M1（Windows 最小可交付基线）已完成**。
-> 安装包已内置 FFmpeg/FFprobe；在移除系统 `PATH` 和 `FRAMEFORGE_FFMPEG_DIR` 的进程中，安装目录版仍能真实导入、生成缩略图并转换视频。
-> 下一阶段：M2 格式能力层 + WebM/MP3。完整计划见 [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md)。
+> 当前进度：**M2（格式能力层 + WebM/MP3）已完成**。
+> M1 安装包已内置 FFmpeg/FFprobe；M2 增加真实编码器探测、WebM（VP9 + Opus）和仅音频 MP3，并对输出编码做 FFprobe 校验。
+> 下一阶段：M3 高级设置、只读命令预览、动态 ETA。完整计划见 [docs/DELIVERY_PLAN.md](docs/DELIVERY_PLAN.md)。
 
-![FrameForge 打包版工作台](docs/evidence/phase5-installed.png)
+![FrameForge 打包版工作台](docs/evidence/phase6-formats.png)
 
 > 想从代码层面理解项目，先读 [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)：按“导入 → 探测 → 缩略图 → 转换 → 队列 → UI”讲清真实调用链、安全边界和测试方式。
 
@@ -15,12 +15,14 @@
 - 通过系统文件选择器或拖拽导入本地视频；支持一次多个文件、中文/空格路径。
 - 用真实 `ffprobe` 读取时长、分辨率、帧率、容器、视频/音频编码和文件大小。
 - 用真实 `ffmpeg` 抽取缩略图；缩略图失败只显示占位图，不阻塞文件转换。
-- 输出 MP4 / MKV，H.264 + AAC；提供兼容优先、质量优先、体积优先三个 CRF 预设。
+- 输出 MP4 / MKV（H.264 + AAC）、WebM（VP9 + Opus）和仅音频 MP3；提供兼容优先、质量优先、体积优先三个质量预设。
+- 启动时真实执行 `ffmpeg -hide_banner -encoders`，只把当前构建真正拥有的编码器显示为可用；缺失时禁用格式并说明原因。
+- MP3 只导出音频；无音轨视频在入队阶段被拒绝。WebM 无音轨输入使用 `-an`，不会凭空生成音轨。
 - 串行任务队列：失败/取消不会阻塞后续任务；取消会终止真实子进程并清理临时文件。
-- 进度来自 FFmpeg `-progress pipe:1`，成功前最多 99%；成功状态必须经过退出码和输出文件双重验证。
+- 进度来自 FFmpeg `-progress pipe:1`，成功前最多 99%；完成状态必须经过退出码、临时文件、最终文件非空和 FFprobe 容器/编码/轨道校验。
 - 输出名冲突自动生成 `_converted (1)`、`_converted (2)`，不覆盖已有文件。
 - 完成任务可打开文件或所在目录；失败任务可复制错误并打开日志目录。
-- Windows 安装包和完整目录 zip 均已生成；安装包内置 FFmpeg/FFprobe 和许可证文件。
+- Windows 安装包和完整目录 zip 均已生成；安装包内置 FFmpeg/FFprobe 和许可证文件。当前 `release/` 产物是 M1 基线，M2 功能已在 `win-unpacked` 验证，最终安装包/zip 在 M6 统一重建。
 
 界面不会用定时器伪造进度，也不会在失败时假装生成输出文件。
 
@@ -105,6 +107,7 @@ electron/
       ffmpeg/
         layout.ts               # resources/ffmpeg/<platform>-<arch> 布局
         process.ts              # spawn(executable, args, { shell: false }) 封装
+        capabilities.ts         # 真实执行 ffmpeg -encoders，缓存能力矩阵
         resolver.ts             # 环境变量 / 随包目录 / 系统 PATH 解析
         status.ts               # 真实执行 -version 并缓存状态
       media/
@@ -113,7 +116,7 @@ electron/
         media-service.ts        # 逐文件编排与缩略图降级
         import-validation.ts    # 拖拽导入路径、扩展名和数量校验
       conversion/
-        args.ts                 # MP4/MKV 参数、质量预设、-progress pipe:1
+        args.ts                 # profile 驱动的 MP4/MKV/WebM/MP3 参数
         output.ts               # _converted 命名、冲突避让、目录校验、临时文件
         output-actions.ts       # 校验已完成任务并打开文件/所在目录
         progress.ts             # 进度行解析和 0–99% 上限
@@ -128,7 +131,8 @@ electron/
     api.ts                      # 可测试的 DesktopAPI 工厂
 shared/
   ipc.ts                        # 主进程 / preload / renderer 共享 IPC 契约
-  conversion.ts                 # 格式、预设、任务状态、进度事件类型
+  conversion.ts                 # 格式 profile、质量预设、任务状态、进度事件类型
+  capabilities.ts               # 编码器能力矩阵与格式可用性
   media.ts                      # 媒体、缩略图、FFmpeg 状态类型
   media-format.ts               # 时长 / 帧率 / 大小 / 分辨率格式化
 src/
@@ -147,6 +151,7 @@ test/
   phase-03-conversion.test.tsx  # 阶段 3：参数、进度、队列、真实转换、取消、UI
   phase-04-polish.test.tsx      # 阶段 4：拖拽、输出操作、关闭保护、快捷键、UI
   phase-05-delivery.test.tsx    # 阶段 5：随包布局、打包配置、环境面板移除
+  phase-06-formats.test.tsx     # 阶段 6：能力矩阵、WebM/MP3 参数、真实输出、UI
 docs/
   PROJECT_SPEC.md               # 需求规格
   DEVELOPER_GUIDE.md            # 开发者实现教程
@@ -164,7 +169,8 @@ THIRD_PARTY_NOTICES.md          # FFmpeg/Electron/依赖许可证与源码获取
    - 元数据来自 `ffprobe -show_format -show_streams -of json`。
    - 缩略图来自真实 `ffmpeg` 单帧输出。
    - 转换进度来自真实 `-progress pipe:1`。
-   - 成功必须满足：退出码 0、临时文件非空、最终文件非空。
+   - 成功必须满足：退出码 0、临时文件非空、最终文件非空，且 FFprobe 确认输出编码/轨道与所选 profile 一致。
+   - 无音轨 MP3 在入队阶段拒绝；仅音频输出若出现视频轨或编码不符，任务失败并清理输出。
 
 2. **路径与边界**
    - 中文/空格路径、无音轨、损坏文件、输出名冲突、取消、FFmpeg 缺失都有测试。
@@ -189,9 +195,10 @@ THIRD_PARTY_NOTICES.md          # FFmpeg/Electron/依赖许可证与源码获取
 - `nodeIntegration: false`
 - `sandbox: true`
 - `webSecurity: true`
-- preload 只暴露十三个受控方法：
+- preload 只暴露十四个受控方法：
   - `getAppInfo()`
   - `getFfmpegStatus()`
+  - `getConversionCapabilities()`
   - `selectVideos()`
   - `importVideos(paths)`
   - `getPathForFile(file)`
@@ -218,16 +225,14 @@ spawn(executablePath, args, { shell: false });
 
 ## 测试与证据
 
-2026-10-21 已执行：
+2026-10-22 已执行：
 
 ```text
-npm test           5 个测试文件，93 个测试全部通过，无 skip
+npm test           6 个测试文件，112 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 npm run dist:dir   免安装目录版构建成功
-npm run dist:win   NSIS 安装包 + 完整目录 zip 构建成功
-npm run e2e:packaged 目录版/安装版/zip 无 PATH 真实转换通过
-静默卸载           安装器退出码 0，安装目录已清理
+npm run e2e:packaged 目录版无 PATH 真实转换通过（MP4 / WebM / MP3）
 ```
 
 打包版无 PATH E2E 真实结果：
@@ -239,12 +244,16 @@ source: bundled
 ffmpeg: 8.0.1
 输入: 阶段五 真实 视频.mp4（中文/空格路径，640×360，2000ms）
 拖拽导入: 640×360，真实 JPEG 缩略图
-输出: 阶段五 真实 视频_converted.mp4，49,555 字节
-输出探测: H.264 640×360
+MP4:  49,555 字节，H.264 640×360 + AAC
+WebM: 73,708 字节，VP9 640×360 + Opus
+MP3:  67,019 字节，仅 MP3 音频，无视频轨道
+能力探测: libx264 / aac / libvpx-vp9 / libopus / libmp3lame 全部可用
 ```
 
 截图：
 
+- `docs/evidence/phase6-formats.png`：打包版 WebM 格式与能力说明
+- `docs/evidence/phase6-mp3.png`：仅音频 MP3 设置
 - `docs/evidence/phase5-installed.png`：安装版真实转换
 - `docs/evidence/phase5-packaged.png`：目录版真实转换
 - `docs/evidence/phase5-zip.png`：完整目录 zip 真实转换
@@ -267,13 +276,15 @@ ffmpeg: 8.0.1
 ## 已知限制
 
 - 当前单窗口、单队列、串行转换；不支持并发编码或队列暂停/重排。
-- 当前格式为 MP4 / MKV；WebM、MP3 在 M2 实现。
+- 当前格式为 MP4 / MKV / WebM / MP3；MOV、GIF、H.265、AV1 不在当前范围。
 - 高级设置、只读命令预览、动态 ETA 在 M3 实现。
+- 编码器能力来自启动时的 `ffmpeg -encoders`；更换 FFmpeg 构建后需要重启或重新检测。
 - 输出目录和格式/预设尚未持久化，关闭应用后需要重新选择。
 - 整体视觉重做尚未开始；等待设计参考和组件策略。
 - 关闭保护有单元测试和主进程接线；原生确认对话框的真实点击流程尚未自动化。
 - “打开文件”和“打开日志目录”的真实系统窗口未在自动化中反复打开；输出路径存在性和 IPC 拒绝路径已测试。
 - 多文件真实拖拽未单独做 E2E；同一路径数组、数量校验和去重有单元测试。
+- 当前安装包和 zip 是 M1 基线，尚未包含 M2 的 WebM/MP3；M6 功能冻结后统一重建。
 - 安装包未配置代码签名，可能出现 SmartScreen 提示。
 - 独立干净 Windows VM 的安装、取消、打开输出、卸载验收尚未执行；当前是“新目录安装/zip 解压 + 移除 PATH + 静默卸载”的本机验证。
 - 未保留字幕轨，未做硬件加速；这是当前 MVP 的明确范围取舍。

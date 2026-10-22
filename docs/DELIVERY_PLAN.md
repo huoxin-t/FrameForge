@@ -2,7 +2,7 @@
 
 > 记录时间：2026-10-21
 >
-> 当前状态：阶段 4 已完成；**M0 / M1 已完成**，Windows 安装包已内置 FFmpeg 并通过无 PATH 真实转换；M2 尚未开始。
+> 当前状态：阶段 4 已完成；**M0 / M1 / M2 已完成**。Windows 安装包已内置 FFmpeg 并通过无 PATH 真实转换；WebM（VP9 + Opus）与仅音频 MP3 已通过真实 FFmpeg、FFprobe 和打包版 E2E 验证；M3 尚未开始。
 >
 > 文档关系：`docs/PROJECT_SPEC.md` 是需求底线；本文件定义阶段 4 之后的执行优先级、顺序和验收标准，不替代原始规格。
 
@@ -238,6 +238,15 @@ flowchart TD
 - 队列、进度、取消、冲突命名对新增格式仍有效；
 - 打包版至少抽测 WebM/MP3 各一次。
 
+**M2 实际结果（2026-10-22）：**
+
+- `shared/capabilities.ts` + `FfmpegCapabilityService` 真实执行 `ffmpeg -hide_banner -encoders`，缓存能力矩阵；缺失编码器时格式禁用并显示原因；
+- `OutputProfile` 驱动 MP4/MKV/WebM/MP3 参数；WebM 使用 `libvpx-vp9` + `libopus`（CRF + `-b:v 0`），MP3 使用 `-vn` + `libmp3lame`；
+- MP3 入队前用真实 FFprobe 探测音轨，无音轨直接失败且不启动 FFmpeg；
+- 转换完成后调用 FFprobe 校验容器/编码/轨道与 profile 一致，不一致会删除输出并标记失败；
+- 测试 6 个文件 112 个全部通过；真实 WebM 输出 `VP9 + Opus`，真实 MP3 输出无视频轨；
+- 打包版无 PATH E2E 依次完成 MP4（49,555 字节，H.264/AAC）、WebM（73,708 字节，VP9/Opus）、MP3（67,019 字节，仅 MP3 音频），截图 `docs/evidence/phase6-formats.png`、`docs/evidence/phase6-mp3.png`。
+
 ---
 
 ### M3：高级设置 + 命令预览 + 动态 ETA（P1-3/P1-4）
@@ -469,15 +478,15 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 | P0-3 干净机器 E2E | 部分完成 | 新目录安装 + 移除 PATH + 真实转换 + zip + 静默卸载通过；独立干净 VM 待 M6 |
 | P0-4 移除环境面板 | 已完成 | 主界面无环境面板；FFmpeg 错误态、重新检测、日志入口已测试 |
 | P0-5 文档/GitHub | 进行中 | `README.md`、`docs/TEST_PLAN.md`、`THIRD_PARTY_NOTICES.md` 已建立；Release 待 M6 |
-| P1-0 格式能力层 | 未开始 | — |
-| P1-1 WebM | 未开始 | — |
-| P1-2 MP3 | 未开始 | — |
+| P1-0 格式能力层 | 已完成 | `shared/capabilities.ts`、`FfmpegCapabilityService`、真实 `ffmpeg -encoders` |
+| P1-1 WebM | 已完成 | 真实 VP9 + Opus、无音轨 `-an`、打包版 E2E 73,708 字节 |
+| P1-2 MP3 | 已完成 | 真实 MP3 无视频轨、无音轨入队拒绝、打包版 E2E 67,019 字节 |
 | P1-3 高级设置/命令预览 | 未开始 | — |
 | P1-4 动态 ETA | 未开始 | — |
 | P1-5 完成提示音 | 未开始（可选） | — |
 | P1-6 设置持久化 | 未开始（可选） | — |
 | 视觉方向 | 未开始 | — |
-| Git 基线提交 | 已完成 | `87d5395` + `1f74c6d`，已推送到 `origin/main` |
+| Git 基线提交 | 已完成 | `87d5395` + `1f74c6d`，已推送到 `origin/main`；M1 基线 `0681c38`；M2 本地提交待推送 |
 
 > 2026-10-21 已建立首个基线提交并推送；M1 完成后按里程碑提交，最终 release 前再做清理和 tag。
 
@@ -485,8 +494,8 @@ Resolver 先查 `<platform>-<arch>`，再回退 flat 目录；具体实现以测
 
 ## 8. 下一步
 
-1. M1 已完成，进入 **M2：格式能力层 + WebM/MP3**；
-2. M2 先做真实 `ffmpeg -encoders` 能力探测，再改 UI，避免假支持；
+1. M1/M2 已完成，进入 **M3：高级设置 + 只读命令预览 + 动态 ETA**；
+2. M3 先冻结设置模型和参数预览契约，再改 UI，避免高级面板变成格式特判；
 3. 每个里程碑结束更新开发日志、测试计划、README 和状态板；
 4. M6 再做最终安装包、独立干净 VM、卸载、GitHub Release；
 5. 任何新增需求先判断：它是 P0、P1，还是应该放到 P2。

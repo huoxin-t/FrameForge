@@ -152,7 +152,8 @@ npm run build
 - `ffmpeg` / `ffprobe` 必须成对存在；
 - 随包缺失时显示可操作错误；
 - 参数始终通过 `spawn(executable, args, { shell: false })`；
-- 真实 MP4/MKV 转换、进度、取消、输出冲突和失败清理。
+- 真实 `ffmpeg -encoders` 能力探测；
+- 真实 MP4/MKV/WebM/MP3 转换、进度、取消、输出冲突、输出编码校验和失败清理。
 
 ### 5.2 打包版无 PATH E2E
 
@@ -174,10 +175,11 @@ npm run e2e:packaged
 2. 从子进程环境中移除 `PATH`、`FRAMEFORGE_FFMPEG_DIR` 等覆盖；
 3. 确认 `getFfmpegStatus()` 返回 `source: "bundled"`；
 4. 用中文/空格路径视频导入，检查 640×360 元数据和真实 JPEG 缩略图；
-5. 启动真实 MP4 转换，等待队列完成；
-6. 用随包 `ffprobe` 验证输出为 H.264 640×360；
-7. 检查主界面没有“运行环境 / FFmpeg 路径 / Node.js”；
-8. 保存 `docs/evidence/phase5-packaged.png`。
+5. 读取真实编码器能力，确认 MP4/WebM/MP3 可用；
+6. 依次启动 MP4、WebM、MP3 真实转换，等待队列完成；
+7. 用随包 `ffprobe` 验证 H.264/AAC、VP9/Opus 和仅 MP3 音频输出；
+8. 检查主界面没有“运行环境 / FFmpeg 路径 / Node.js”；
+9. 保存 `docs/evidence/phase6-formats.png` 和 `docs/evidence/phase6-mp3.png`。
 
 安装包验证：
 
@@ -195,7 +197,7 @@ $env:FRAMEFORGE_E2E_SCREENSHOT = "docs\evidence\phase5-installed.png"
 npm run e2e:packaged
 ```
 
-2026-10-21 的真实结果：
+2026-10-21 M1 安装版真实结果（历史基线）：
 
 ```text
 PATH: null
@@ -206,6 +208,16 @@ version: 8.0.1
 输入: 阶段五 真实 视频.mp4（中文/空格路径，640×360，2000ms）
 输出: 阶段五 真实 视频_converted.mp4，49,555 字节
 输出探测: H.264 640×360
+```
+
+2026-10-22 M2 目录版真实结果（`release/win-unpacked`，安装包/zip 待 M6 重建）：
+
+```text
+source: bundled
+能力: libx264 / aac / libvpx-vp9 / libopus / libmp3lame 全部可用
+MP4:  49,555 字节，H.264 640×360 + AAC
+WebM: 73,708 字节，VP9 640×360 + Opus
+MP3:  67,019 字节，MP3 音频，无视频轨道
 ```
 
 ## 6. 许可证与再分发

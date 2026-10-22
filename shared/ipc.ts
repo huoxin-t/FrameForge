@@ -3,11 +3,13 @@ import type {
   ConversionUpdate,
   StartConversionsRequest,
 } from './conversion';
+import type { ConversionCapabilities } from './capabilities';
 import type { FfmpegStatus, MediaItem } from './media';
 
 export const IPC_CHANNELS = {
   getAppInfo: 'app:get-info',
   getFfmpegStatus: 'ffmpeg:get-status',
+  getConversionCapabilities: 'conversion:get-capabilities',
   selectVideos: 'media:select-videos',
   importPaths: 'media:import-paths',
   selectOutputDirectory: 'conversion:select-output-directory',
@@ -35,6 +37,7 @@ export interface AppInfo {
 export interface DesktopAPI {
   getAppInfo(): Promise<AppInfo>;
   getFfmpegStatus(): Promise<FfmpegStatus>;
+  getConversionCapabilities(): Promise<ConversionCapabilities>;
   selectVideos(): Promise<MediaItem[]>;
   importVideos(paths: string[]): Promise<MediaItem[]>;
   /** 由 preload 的 webUtils 获取本地文件路径；不要从 File.path 读取。 */
@@ -53,6 +56,7 @@ export interface DesktopAPI {
 export const DESKTOP_API_KEYS = [
   'getAppInfo',
   'getFfmpegStatus',
+  'getConversionCapabilities',
   'selectVideos',
   'importVideos',
   'getPathForFile',

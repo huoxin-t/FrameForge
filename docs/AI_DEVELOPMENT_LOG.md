@@ -1159,4 +1159,101 @@ importMode: drag-drop
 - 独立干净 Windows VM 的安装、取消、打开输出、卸载验收仍需 M6 完成；
 - 安装包未签名，可能出现 SmartScreen 提示；
 - FFmpeg 为 GPLv3 shared build，已保留许可证和源码获取说明，但正式发布前仍需维护者确认合规；
-- M2 格式能力层尚未开始。
+- M2 格式能力层尚未开始（本节写于 M1 收尾时，下一节记录 M2 实际结果）。
+
+---
+
+## 2026-10-22 / M2：格式能力层 + WebM/MP3
+
+### 目标
+
+把 MP4/MKV 扩展为 MP4/MKV/WebM/MP3，同时不产生“UI 显示支持、实际编码器缺失”的假支持。
+
+### 测试先行
+
+新增 `test/phase-06-formats.test.tsx`，先取得真实 RED，再实现：
+
+- `OutputProfile` 格式矩阵、扩展名、编码器需求；
+- 真实 `ffmpeg -hide_banner -encoders` 输出解析；
+- 能力缺失时格式禁用和原因；
+- WebM 参数：`libvpx-vp9`、`libopus`、`-b:v 0`、无音轨 `-an`；
+- MP3 参数：`-vn`、`0:a:0`、`libmp3lame`；
+- MP3 无音轨入队拒绝；
+- 真实 WebM/MP3 输出和 FFprobe 编码验证；
+- 输出 profile 校验；
+- 格式选择 UI 的编码摘要、缺失编码器原因、音频-only 说明。
+
+RED 证据：`test-results/phase6-formats-red.log`、`phase6-formats-red2.log`。
+
+### 实现
+
+1. 共享契约
+   - `shared/conversion.ts`：`OUTPUT_PROFILES` 统一描述容器、扩展名、编码器、摘要和说明；新增 `isAudioOnlyFormat()`。
+   - `shared/capabilities.ts`：编码器 ID、能力矩阵、`parseEncoderList()`、`buildConversionCapabilities()`。
+
+2. 主进程
+   - `electron/main/services/ffmpeg/capabilities.ts`：真实执行 `ffmpeg -encoders`，缓存成功结果；失败返回全 false 和错误，不伪装可用。
+   - `conversion/args.ts`：由 profile 驱动参数，MP4 faststart 只出现在 MP4；WebM 使用 VP9 CRF + `-b:v 0`；MP3 不构造视频参数。
+   - `conversion/queue.ts`：`validateSource()` 接收设置；仅音频格式用真实 FFprobe 探测 `hasAudio`，无音轨在入队阶段失败，不启动 FFmpeg。
+   - `conversion/runner.ts`：成功后调用 `probeOutputFile()`，校验容器、视频/音频编码、轨道存在性和时长；不一致时删除最终输出并标记失败。
+   - `media/probe.ts`：新增 `probeOutputFile()` / `parseOutputProbeJson()`，允许音频输出但不允许空容器。
+
+3. IPC / renderer
+   - 新增 `conversion:get-capabilities` 通道、preload 方法和 `DesktopAPI.getConversionCapabilities()`。
+   - `App.tsx`：启动时读取能力；不可用格式自动回退；MP3 过滤无音轨项目并显示排除数量；重新检测 FFmpeg 后刷新能力。
+   - `ConversionSettings.tsx`：显示容器/编码摘要、不可用原因、检测中/失败状态；MP3 显示“音频质量”和“仅导出音频”，隐藏视频质量说明。
+
+### 测试与构建结果
+
+```text
+npx vitest run test/phase-06-formats.test.tsx   19/19 通过（含 4 个真实 FFmpeg 用例）
+npm test                                         6 个文件，112/112 通过，无 skip
+npm run typecheck                                通过
+npm run build                                    main / preload / renderer 构建通过
+npm run dist:dir                                 win-unpacked 构建成功
+```
+
+真实集成结果：
+
+```text
+WebM: VP9 320×240 + Opus，completed，输出存在
+MP3:  MP3 音频，无视频轨道，completed
+无音轨 MP4 → MP3: failed，错误包含“没有音轨”，未启动 FFmpeg
+```
+
+### 打包版无 PATH E2E
+
+脚本改为依次验证 MP4/WebM/MP3，并读取能力矩阵。真实结果：
+
+```text
+PATH: null
+FRAMEFORGE_FFMPEG_DIR: null
+source: bundled
+ffmpeg: 8.0.1
+MP4:  49,555 字节，H.264 640×360 + AAC
+WebM: 73,708 字节，VP9 640×360 + Opus
+MP3:  67,019 字节，MP3 音频，无视频轨道
+能力: libx264 / aac / libvpx-vp9 / libopus / libmp3lame 全部 true
+```
+
+截图：
+
+- `docs/evidence/phase6-formats.png`
+- `docs/evidence/phase6-mp3.png`
+
+日志：`test-results/phase6-e2e-formats-final.log`、`phase6-dist-dir-final.log`、`phase6-full-suite-final2.log`、`phase6-typecheck-final2.log`。
+
+### 遇到的问题
+
+- WebM UI 测试最初在默认 MP4 选中态查找 `VP9 + Opus`，与实际“只显示当前格式摘要”不符；拆成选中 WebM 的独立用例。
+- MP3 是音频文件，原有 `probeMedia()` 只接受视频扩展名；新增 `probeOutputFile()`，保留导入阶段视频白名单，同时允许输出验证读取 `.mp3`。
+- 输出验证最初只检查非空；补充 FFprobe 编码/轨道校验，避免“文件非空但编码错误”被标记完成。
+- 全量测试有两个旧 preload 契约断言缺少新键；更新为包含 `getConversionCapabilities`，没有删除契约检查。
+- M2 只重建了 `win-unpacked`；安装包和 zip 仍是 M1 基线，M6 功能冻结后统一重建。
+
+### 未完成 / 风险
+
+- 高级设置、命令预览、动态 ETA 仍待 M3；
+- 安装包/zip 尚未包含 M2 功能；
+- GPL 合规、代码签名、独立干净 VM 验收仍在 M6 前处理；
+- AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。

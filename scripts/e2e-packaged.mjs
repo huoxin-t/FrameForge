@@ -49,7 +49,8 @@ const outputDirectory = join(
 const userDataDirectory = join(root, 'test-results', 'phase5-e2e', 'user-data');
 const screenshotPath = process.env.FRAMEFORGE_E2E_SCREENSHOT
   ? resolve(process.env.FRAMEFORGE_E2E_SCREENSHOT)
-  : join(root, 'docs', 'evidence', 'phase5-packaged.png');
+  : join(root, 'docs', 'evidence', 'phase6-formats.png');
+const mp3ScreenshotPath = join(root, 'docs', 'evidence', 'phase6-mp3.png');
 const port = 9335;
 
 class Cdp {
@@ -164,62 +165,67 @@ async function main() {
     );
     const item = assertImportedItem(imported);
 
-    const created = await evaluate(
+    const capabilities = await evaluate(
       cdp,
-      `window.desktopAPI.startConversions(${JSON.stringify({
-        sourcePaths: [inputPath],
-        settings: {
-          format: 'mp4',
-          qualityPreset: 'compatible',
-          outputDirectory,
-        },
-      })})`,
+      'window.desktopAPI.getConversionCapabilities()',
     );
-    if (!Array.isArray(created) || created.length !== 1) {
-      throw new Error(`启动转换结果异常：${JSON.stringify(created)}`);
-    }
-
+    assertCapabilities(capabilities);
     await waitFor(
       () =>
         evaluate(
           cdp,
-          `document.querySelector('section[aria-label="任务队列"]')?.innerText.includes('已完成') === true`,
+          `document.body.innerText.includes('WebM') && document.body.innerText.includes('MP3')`,
         ),
-      '真实转换完成',
-      60_000,
+      'WebM/MP3 格式选项',
+      10_000,
     );
 
-    const outputPath = created[0].outputPath;
-    const outputStat = await stat(outputPath);
-    if (outputStat.size <= 0) {
-      throw new Error('输出文件为空');
+    const conversionSpecs = [
+      {
+        format: 'mp4',
+        qualityPreset: 'compatible',
+        expectedVideo: 'h264',
+        expectedAudio: 'aac',
+      },
+      {
+        format: 'webm',
+        qualityPreset: 'compatible',
+        expectedVideo: 'vp9',
+        expectedAudio: 'opus',
+      },
+      {
+        format: 'mp3',
+        qualityPreset: 'quality',
+        expectedVideo: null,
+        expectedAudio: 'mp3',
+      },
+    ];
+    const conversions = {};
+    for (const [index, spec] of conversionSpecs.entries()) {
+      conversions[spec.format] = await runFormatConversion({
+        cdp,
+        sourcePath: inputPath,
+        targetDirectory: outputDirectory,
+        spec,
+        expectedCompleted: index + 1,
+      });
     }
 
-    const probe = await runProcess(ffprobePath, [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'stream=codec_name,width,height',
-      '-of',
-      'json',
-      outputPath,
-    ]);
-    const probeData = JSON.parse(probe);
-    const stream = probeData.streams?.[0];
-    if (
-      stream?.codec_name !== 'h264' ||
-      stream?.width !== 640 ||
-      stream?.height !== 360
-    ) {
-      throw new Error(`输出视频探测异常：${probe}`);
-    }
+    await selectFormat(cdp, 'webm');
+    await waitFor(
+      () => evaluate(cdp, `document.body.innerText.includes('VP9 + Opus')`),
+      'WebM 格式摘要',
+      10_000,
+    );
+    await captureFullPage(cdp, screenshotPath);
 
-    const screenshot = await cdp.send('Page.captureScreenshot', {
-      format: 'png',
-    });
-    await writeFile(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+    await selectFormat(cdp, 'mp3');
+    await waitFor(
+      () => evaluate(cdp, `document.body.innerText.includes('仅导出音频')`),
+      'MP3 音频-only 说明',
+      10_000,
+    );
+    await captureFullPage(cdp, mp3ScreenshotPath);
 
     await evaluate(cdp, 'window.close()');
     await waitForExit(child, 5_000);
@@ -232,6 +238,11 @@ async function main() {
             FRAMEFORGE_FFMPEG_DIR: appEnvironment.FRAMEFORGE_FFMPEG_DIR ?? null,
           },
           ffmpegStatus,
+          capabilities: {
+            error: capabilities.error,
+            encoders: capabilities.encoders,
+            formats: capabilities.formats,
+          },
           importMode,
           imported: {
             fileName: item.fileName,
@@ -240,10 +251,9 @@ async function main() {
             durationMs: item.metadata.durationMs,
             thumbnailBytes: item.thumbnailDataUrl.length,
           },
-          outputPath,
-          outputBytes: outputStat.size,
-          outputStream: stream,
+          conversions,
           screenshotPath,
+          mp3ScreenshotPath,
         },
         null,
         2,
@@ -264,6 +274,7 @@ async function prepareDirectories() {
   await rm(userDataDirectory, { recursive: true, force: true });
   await mkdir(userDataDirectory, { recursive: true });
   await mkdir(dirname(screenshotPath), { recursive: true });
+  await mkdir(dirname(mp3ScreenshotPath), { recursive: true });
 }
 
 async function ensureInputVideo() {
@@ -367,6 +378,43 @@ async function importThroughWorkspace(cdp, filePath) {
   );
 }
 
+async function selectFormat(cdp, format) {
+  const selected = await evaluate(
+    cdp,
+    `(() => {
+      const select = document.querySelector('#conversion-format');
+      if (!select) throw new Error('找不到输出格式选择器');
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        'value',
+      ).set;
+      setter.call(select, ${JSON.stringify(format)});
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return select.value;
+    })()`,
+  );
+  if (selected !== format) {
+    throw new Error(`格式选择失败：期望 ${format}，实际 ${selected}`);
+  }
+}
+
+async function captureFullPage(cdp, targetPath) {
+  const metrics = await cdp.send('Page.getLayoutMetrics');
+  const size = metrics.cssContentSize ?? metrics.contentSize;
+  const screenshot = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+    clip: {
+      x: 0,
+      y: 0,
+      width: Math.ceil(size.width),
+      height: Math.ceil(size.height),
+      scale: 1,
+    },
+  });
+  await writeFile(targetPath, Buffer.from(screenshot.data, 'base64'));
+}
+
 function assertBundledStatus(status) {
   if (!status?.available) {
     throw new Error(`FFmpeg 未就绪：${JSON.stringify(status)}`);
@@ -402,6 +450,115 @@ function assertImportedItem(imported) {
   }
 
   return item;
+}
+
+function assertCapabilities(capabilities) {
+  if (!capabilities || capabilities.error) {
+    throw new Error(`编码器能力检测失败：${JSON.stringify(capabilities)}`);
+  }
+
+  for (const encoder of [
+    'libx264',
+    'aac',
+    'libvpx-vp9',
+    'libopus',
+    'libmp3lame',
+  ]) {
+    if (capabilities.encoders?.[encoder] !== true) {
+      throw new Error(`编码器能力缺失：${encoder}`);
+    }
+  }
+
+  for (const format of ['mp4', 'webm', 'mp3']) {
+    const capability = capabilities.formats?.find(
+      (candidate) => candidate.format === format,
+    );
+    if (!capability?.available) {
+      throw new Error(`格式能力不可用：${JSON.stringify(capability)}`);
+    }
+  }
+}
+
+async function runFormatConversion({
+  cdp,
+  sourcePath,
+  targetDirectory,
+  spec,
+  expectedCompleted,
+}) {
+  const created = await evaluate(
+    cdp,
+    `window.desktopAPI.startConversions(${JSON.stringify({
+      sourcePaths: [sourcePath],
+      settings: {
+        format: spec.format,
+        qualityPreset: spec.qualityPreset,
+        outputDirectory: targetDirectory,
+      },
+    })})`,
+  );
+  if (!Array.isArray(created) || created.length !== 1) {
+    throw new Error(`启动 ${spec.format} 转换结果异常：${JSON.stringify(created)}`);
+  }
+
+  const outputPath = created[0].outputPath;
+  if (!outputPath.endsWith(`.${spec.format}`)) {
+    throw new Error(`输出扩展名错误：${outputPath}`);
+  }
+
+  await waitFor(
+    () =>
+      evaluate(
+        cdp,
+        `document.querySelector('section[aria-label="任务队列"]')?.innerText.includes(${JSON.stringify(
+          `完成 ${expectedCompleted} / ${expectedCompleted}`,
+        )}) === true`,
+      ),
+    `${spec.format} 任务完成`,
+    90_000,
+  );
+
+  const outputStat = await stat(outputPath);
+  if (outputStat.size <= 0) {
+    throw new Error(`${spec.format} 输出文件为空`);
+  }
+
+  const probeText = await runProcess(ffprobePath, [
+    '-v',
+    'error',
+    '-show_entries',
+    'stream=codec_type,codec_name,width,height',
+    '-of',
+    'json',
+    outputPath,
+  ]);
+  const probeData = JSON.parse(probeText);
+  const streams = Array.isArray(probeData.streams) ? probeData.streams : [];
+  const video = streams.find((stream) => stream.codec_type === 'video') ?? null;
+  const audio = streams.find((stream) => stream.codec_type === 'audio') ?? null;
+
+  if (spec.expectedVideo === null) {
+    if (video) {
+      throw new Error(`${spec.format} 不应包含视频轨道：${probeText}`);
+    }
+  } else if (
+    video?.codec_name !== spec.expectedVideo ||
+    video?.width !== 640 ||
+    video?.height !== 360
+  ) {
+    throw new Error(`${spec.format} 视频探测异常：${probeText}`);
+  }
+
+  if (audio?.codec_name !== spec.expectedAudio) {
+    throw new Error(`${spec.format} 音频探测异常：${probeText}`);
+  }
+
+  return {
+    outputPath,
+    outputBytes: outputStat.size,
+    video,
+    audio,
+  };
 }
 
 async function exists(path) {

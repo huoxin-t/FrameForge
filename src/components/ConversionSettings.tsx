@@ -7,6 +7,10 @@ import {
   type OutputFormat,
   type QualityPresetId,
 } from '../../shared/conversion';
+import {
+  getFormatCapability,
+  type ConversionCapabilities,
+} from '../../shared/capabilities';
 
 interface ConversionSettingsProps {
   format: OutputFormat;
@@ -16,9 +20,14 @@ interface ConversionSettingsProps {
   starting: boolean;
   disabled: boolean;
   error: string | null;
+  capabilities: ConversionCapabilities | null;
+  capabilitiesLoading: boolean;
+  capabilitiesError: string | null;
+  audioOnlyExcludedCount: number;
   onFormatChange: (format: OutputFormat) => void;
   onQualityPresetChange: (preset: QualityPresetId) => void;
   onChooseDirectory: () => void;
+  onRefreshCapabilities: () => void;
   onStart: () => void;
 }
 
@@ -30,14 +39,29 @@ export function ConversionSettings({
   starting,
   disabled,
   error,
+  capabilities,
+  capabilitiesLoading,
+  capabilitiesError,
+  audioOnlyExcludedCount,
   onFormatChange,
   onQualityPresetChange,
   onChooseDirectory,
+  onRefreshCapabilities,
   onStart,
 }: ConversionSettingsProps) {
   const formatOption = getOutputFormat(format);
   const preset = getQualityPreset(qualityPreset);
-  const canStart = Boolean(outputDirectory) && itemCount > 0 && !starting && !disabled;
+  const formatCapability = capabilities
+    ? getFormatCapability(capabilities, format)
+    : null;
+  const formatAvailable = formatCapability?.available ?? false;
+  const canStart =
+    Boolean(outputDirectory) &&
+    itemCount > 0 &&
+    !starting &&
+    !disabled &&
+    formatAvailable;
+  const qualityLabel = formatOption.kind === 'audio' ? '音频质量' : '质量预设';
 
   return (
     <section
@@ -64,15 +88,63 @@ export function ConversionSettings({
             onChange={(event) => onFormatChange(event.target.value as OutputFormat)}
             className="w-full rounded-lg border border-white/10 bg-[#141821] px-3 py-2 text-xs text-slate-200 outline-none focus:border-amber-300/50"
           >
-            {OUTPUT_FORMATS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
+            {OUTPUT_FORMATS.map((option) => {
+              const optionCapability = capabilities
+                ? getFormatCapability(capabilities, option.id)
+                : null;
+              const unavailable = Boolean(
+                optionCapability && !optionCapability.available,
+              );
+              return (
+                <option key={option.id} value={option.id} disabled={unavailable}>
+                  {option.label}
+                  {unavailable ? '（不可用）' : ''}
+                </option>
+              );
+            })}
           </select>
           <p className="mt-1.5 text-[11px] leading-5 text-slate-500">
+            {formatOption.container} · {formatOption.summary}
+          </p>
+          <p className="mt-1 text-[11px] leading-5 text-slate-500">
             {formatOption.description}
           </p>
+          {formatOption.kind === 'audio' ? (
+            <p className="mt-1 text-[11px] leading-5 text-amber-200/80">
+              仅导出音频，不包含视频轨道。
+            </p>
+          ) : null}
+          {formatCapability && !formatCapability.available ? (
+            <p
+              role="alert"
+              className="mt-1.5 rounded-md border border-rose-400/20 bg-rose-400/10 px-2 py-1.5 text-[11px] leading-5 text-rose-200"
+            >
+              当前 FFmpeg 缺少{' '}
+              {formatCapability.missingEncoders.join('、')}，无法导出{' '}
+              {formatOption.label}。
+            </p>
+          ) : null}
+          {capabilitiesLoading ? (
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+              正在检测编码器…
+            </p>
+          ) : null}
+          {capabilitiesError ? (
+            <div
+              role="status"
+              className="mt-1.5 rounded-md border border-rose-400/20 bg-rose-400/10 px-2 py-1.5 text-[11px] leading-5 text-rose-200"
+            >
+              <p>编码器检测失败：{capabilitiesError}</p>
+              <button
+                type="button"
+                onClick={onRefreshCapabilities}
+                disabled={capabilitiesLoading}
+                className="mt-1 rounded border border-rose-200/30 px-2 py-1 font-medium text-rose-100 transition hover:bg-rose-200/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                重新检测编码器
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div>
@@ -80,11 +152,11 @@ export function ConversionSettings({
             htmlFor="quality-preset"
             className="mb-1.5 block text-xs font-medium text-slate-300"
           >
-            质量预设
+            {qualityLabel}
           </label>
           <select
             id="quality-preset"
-            aria-label="质量预设"
+            aria-label={qualityLabel}
             value={qualityPreset}
             onChange={(event) =>
               onQualityPresetChange(event.target.value as QualityPresetId)
@@ -98,7 +170,9 @@ export function ConversionSettings({
             ))}
           </select>
           <p className="mt-1.5 text-[11px] leading-5 text-slate-500">
-            {preset.description}
+            {formatOption.kind === 'audio'
+              ? `音频 ${preset.audioBitrateKbps} kbps`
+              : preset.description}
           </p>
         </div>
 
@@ -125,6 +199,12 @@ export function ConversionSettings({
             </span>
           </div>
         </div>
+
+        {audioOnlyExcludedCount > 0 ? (
+          <p className="rounded-lg border border-amber-300/15 bg-amber-300/5 px-3 py-2 text-[11px] leading-5 text-amber-100/80">
+            已排除 {audioOnlyExcludedCount} 个无音轨视频（MP3 无法导出静音文件）。
+          </p>
+        ) : null}
 
         {error ? (
           <p

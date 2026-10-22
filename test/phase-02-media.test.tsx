@@ -24,6 +24,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 
 import App from '../src/App';
 import { createTestLogger } from './helpers/test-logger';
+import { readyCapabilities } from './helpers/capabilities';
 import { DESKTOP_API_KEYS, IPC_CHANNELS, type AppInfo, type DesktopAPI } from '../shared/ipc';
 import {
   formatDuration,
@@ -894,6 +895,7 @@ function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
   const api: DesktopAPI = {
     getAppInfo: vi.fn().mockResolvedValue(appInfo),
     getFfmpegStatus: vi.fn().mockResolvedValue(readyStatus),
+    getConversionCapabilities: vi.fn().mockResolvedValue(readyCapabilities),
     selectVideos: vi.fn().mockResolvedValue([]),
     importVideos: vi.fn().mockResolvedValue([]),
     getPathForFile: vi.fn(() => ''),
