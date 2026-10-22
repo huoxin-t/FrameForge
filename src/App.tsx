@@ -26,6 +26,7 @@ import { FfmpegErrorBanner } from './components/FfmpegErrorBanner';
 import { HistoryCard } from './components/HistoryCard';
 import { JobQueue } from './components/JobQueue';
 import { MediaList } from './components/MediaList';
+import { useQueueCompletionSound } from './hooks/useQueueCompletionSound';
 import type { AppInfoState, FfmpegState } from './types/ui';
 
 export default function App() {
@@ -72,9 +73,16 @@ export default function App() {
     selectedProfile.kind === 'audio'
       ? validItems.filter((item) => item.metadata?.hasAudio !== true).length
       : 0;
-  const hasActiveJobs = jobs.some(
-    (job) => job.status === 'queued' || job.status === 'running',
+  const activeJobCount = useMemo(
+    () =>
+      jobs.filter(
+        (job) => job.status === 'queued' || job.status === 'running',
+      ).length,
+    [jobs],
   );
+  const hasActiveJobs = activeJobCount > 0;
+  useQueueCompletionSound(activeJobCount);
+
   const activeSourcePaths = useMemo(() => {
     const paths = new Set<string>();
     for (const job of jobs) {
