@@ -10,9 +10,14 @@ import type {
   ConversionSettings,
 } from '../../../../shared/conversion';
 import {
+  DEFAULT_ADVANCED_SETTINGS,
+  isAudioBitrateKbps,
+  isAudioMode,
   isAudioOnlyFormat,
+  isCrfInRange,
   isOutputFormat,
   isQualityPresetId,
+  isResolutionPresetId,
 } from '../../../../shared/conversion';
 import { createLogger } from '../logger';
 import type { FfmpegService } from '../ffmpeg/status';
@@ -116,6 +121,10 @@ export class ConversionQueue {
     const normalizedSettings: ConversionSettings = {
       ...settings,
       outputDirectory: outputValidation.path,
+      advanced: {
+        ...DEFAULT_ADVANCED_SETTINGS,
+        ...settings.advanced,
+      },
     };
 
     logger.info('Enqueue conversion requested', {
@@ -209,6 +218,9 @@ export class ConversionQueue {
     if (job.status === 'queued') {
       job.status = 'canceled';
       job.finishedAt = this.now();
+      job.elapsedMs = 0;
+      job.speed = null;
+      job.etaSeconds = null;
       this.jobSettings.delete(job.id);
       logger.info('Queued conversion canceled', { jobId });
       this.emit(job);
@@ -278,6 +290,9 @@ export class ConversionQueue {
         job.status = 'running';
         job.progress = 0;
         job.startedAt = this.now();
+        job.elapsedMs = 0;
+        job.speed = null;
+        job.etaSeconds = null;
         this.emit(job);
 
         const controller = new AbortController();
@@ -289,9 +304,14 @@ export class ConversionQueue {
             settings,
             {
               signal: controller.signal,
-              onProgress: (progress) => {
+              onProgress: (progress, telemetry) => {
                 if (job.status === 'running' && Number.isFinite(progress)) {
                   job.progress = Math.max(0, Math.min(99, Math.floor(progress)));
+                  if (telemetry) {
+                    job.speed = telemetry.speed;
+                    job.etaSeconds = telemetry.etaSeconds;
+                  }
+                  job.elapsedMs = this.elapsedSince(job);
                   this.emit(job);
                 }
               },
@@ -302,7 +322,7 @@ export class ConversionQueue {
           job.progress = 100;
           job.status = 'completed';
           job.error = null;
-          job.finishedAt = this.now();
+          this.finishTelemetry(job);
           logger.info('Conversion job completed', {
             jobId: job.id,
             outputPath: job.outputPath,
@@ -315,14 +335,14 @@ export class ConversionQueue {
             job.status = 'canceled';
             job.error = null;
             job.logExcerpt = null;
-            job.finishedAt = this.now();
+            this.finishTelemetry(job);
             logger.info('Conversion job canceled', { jobId: job.id });
           } else {
             job.status = 'failed';
             job.error = toErrorMessage(error);
             job.logExcerpt =
               error instanceof ConversionError ? error.logExcerpt : null;
-            job.finishedAt = this.now();
+            this.finishTelemetry(job);
             logger.warn('Conversion job failed', {
               jobId: job.id,
               error: job.error,
@@ -379,6 +399,9 @@ export class ConversionQueue {
       logExcerpt: null,
       startedAt: null,
       finishedAt: input.finishedAt,
+      elapsedMs: null,
+      speed: null,
+      etaSeconds: null,
     };
   }
 
@@ -386,8 +409,26 @@ export class ConversionQueue {
     job.status = 'failed';
     job.error = message;
     job.finishedAt = this.now();
+    job.elapsedMs = null;
+    job.speed = null;
+    job.etaSeconds = null;
     this.jobSettings.delete(job.id);
     this.emit(job);
+  }
+
+  private elapsedSince(job: ConversionJob): number | null {
+    if (job.startedAt === null) {
+      return null;
+    }
+    return Math.max(0, this.now() - job.startedAt);
+  }
+
+  private finishTelemetry(job: ConversionJob): void {
+    job.finishedAt = this.now();
+    job.elapsedMs =
+      job.startedAt === null ? null : Math.max(0, job.finishedAt - job.startedAt);
+    job.speed = null;
+    job.etaSeconds = null;
   }
 
   private emit(job: ConversionJob): void {
@@ -404,6 +445,29 @@ export class ConversionQueue {
     }
     if (!isQualityPresetId(settings.qualityPreset)) {
       throw new ConversionQueueError('不支持的质量预设');
+    }
+
+    const advanced = settings.advanced ?? DEFAULT_ADVANCED_SETTINGS;
+    if (!isResolutionPresetId(advanced.resolution)) {
+      throw new ConversionQueueError('不支持的分辨率');
+    }
+    if (
+      advanced.audioBitrateKbps !== null &&
+      !isAudioBitrateKbps(advanced.audioBitrateKbps)
+    ) {
+      throw new ConversionQueueError('不支持的音频码率');
+    }
+    if (
+      advanced.crf !== null &&
+      !isCrfInRange(advanced.crf)
+    ) {
+      throw new ConversionQueueError('CRF 必须是 18 到 30 的整数');
+    }
+    if (!isAudioMode(advanced.audioMode)) {
+      throw new ConversionQueueError('不支持的音频模式');
+    }
+    if (isAudioOnlyFormat(settings.format) && advanced.audioMode === 'remove') {
+      throw new ConversionQueueError('MP3 必须保留音轨');
     }
   }
 

@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { ConversionJob, ConversionJobStatus } from '../../shared/conversion';
+import { formatDuration } from '../../shared/media-format';
 
 interface JobQueueProps {
   jobs: ConversionJob[];
@@ -177,6 +178,19 @@ export function JobQueue({
                     {progress}%
                   </span>
                 </div>
+
+                {job.status === 'running' ? (
+                  <p className="mt-1.5 font-mono text-[10px] text-slate-500">
+                    已用 {formatDuration(job.elapsedMs)} ·{' '}
+                    {job.etaSeconds === null
+                      ? '剩余估算中'
+                      : `剩余约 ${formatDuration(job.etaSeconds * 1000)}`}{' '}
+                    ·{' '}
+                    {job.speed === null
+                      ? '速度估算中'
+                      : `${job.speed.toFixed(2)}×`}
+                  </p>
+                ) : null}
 
                 {job.error ? (
                   <p className="mt-2 text-[11px] leading-5 text-rose-300">

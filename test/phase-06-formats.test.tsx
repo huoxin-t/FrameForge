@@ -35,6 +35,7 @@ import { probeOutputFile } from '../electron/main/services/media/probe';
 import { ConversionSettings } from '../src/components/ConversionSettings';
 import type { FfmpegStatus } from '../shared/media';
 import {
+  DEFAULT_ADVANCED_SETTINGS,
   OUTPUT_PROFILES,
   getOutputFormat,
   type ConversionSettings as ConversionSettingsValue,
@@ -181,8 +182,10 @@ function renderSettings(
   const handlers = {
     onFormatChange: vi.fn(),
     onQualityPresetChange: vi.fn(),
+    onAdvancedChange: vi.fn(),
     onChooseDirectory: vi.fn(),
     onRefreshCapabilities: vi.fn(),
+    onCopyCommand: vi.fn().mockResolvedValue(undefined),
     onStart: vi.fn(),
     ...overrides,
   };
@@ -202,6 +205,9 @@ function renderSettings(
       capabilitiesLoading={false}
       capabilitiesError={null}
       audioOnlyExcludedCount={0}
+      advanced={{ ...DEFAULT_ADVANCED_SETTINGS }}
+      commandPreview="ffmpeg -hide_banner -i test.mp4 out.mp4"
+      previewNote="示例输出"
       {...overrides}
       {...handlers}
     />,
@@ -407,6 +413,7 @@ describe('阶段 6 / 队列音频校验', () => {
       format: 'mp3',
       qualityPreset: 'compatible',
       outputDirectory: 'C:\\输出 目录',
+      advanced: { ...DEFAULT_ADVANCED_SETTINGS },
     };
     const [job] = await queue.enqueue(['C:\\媒体 样本\\无音轨.mp4'], settings);
 
@@ -427,11 +434,13 @@ describe('阶段 6 / 输出 profile 校验', () => {
     format: 'webm',
     qualityPreset: 'compatible',
     outputDirectory: 'C:\\输出 目录',
+    advanced: { ...DEFAULT_ADVANCED_SETTINGS },
   };
   const mp3Settings: ConversionSettingsValue = {
     format: 'mp3',
     qualityPreset: 'compatible',
     outputDirectory: 'C:\\输出 目录',
+    advanced: { ...DEFAULT_ADVANCED_SETTINGS },
   };
 
   it('接受真实的 WebM VP9/Opus 输出', () => {
@@ -487,6 +496,7 @@ describe('阶段 6 / 输出 profile 校验', () => {
           format: 'mp4',
           qualityPreset: 'compatible',
           outputDirectory: 'C:\\输出 目录',
+          advanced: { ...DEFAULT_ADVANCED_SETTINGS },
         },
         true,
       ),
@@ -555,6 +565,7 @@ describe('阶段 6 / 真实编码器与格式输出', () => {
       format: 'webm',
       qualityPreset: 'compatible',
       outputDirectory,
+      advanced: { ...DEFAULT_ADVANCED_SETTINGS },
     });
     await queue.waitForIdle();
 
@@ -594,6 +605,7 @@ describe('阶段 6 / 真实编码器与格式输出', () => {
       format: 'mp3',
       qualityPreset: 'quality',
       outputDirectory,
+      advanced: { ...DEFAULT_ADVANCED_SETTINGS },
     });
     await queue.waitForIdle();
 
@@ -632,6 +644,7 @@ describe('阶段 6 / 真实编码器与格式输出', () => {
       format: 'mp3',
       qualityPreset: 'compatible',
       outputDirectory,
+      advanced: { ...DEFAULT_ADVANCED_SETTINGS },
     });
     await queue.waitForIdle();
 

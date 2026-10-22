@@ -1,6 +1,6 @@
 # FrameForge 测试计划
 
-> 记录时间：2026-10-22（M2 格式能力层完成）
+> 记录时间：2026-10-22（M3 高级设置、命令预览和动态 ETA 完成）
 >
 > 原则：能自动化的必须真实执行；不能自动化的明确写“手工/未验证”，不用开发机 PATH 或 mock 结果代替干净机器验收。
 
@@ -10,8 +10,8 @@
 |---|---|---|
 | 单元测试 | 路径校验、参数构造、进度解析、输出命名、IPC 校验、状态机 | 已覆盖 |
 | 集成测试 | 真实 FFprobe/FFmpeg 生成样本、读取元数据、缩略图、MP4/MKV/WebM/MP3 转换、能力探测、取消、失败清理 | 已覆盖 |
-| UI 测试 | 导入、错误态、队列、任务操作、格式能力禁用、MP3 无音轨说明、快捷键、窄窗口 | 已覆盖 |
-| 打包目录 E2E | `release/win-unpacked` 真实启动、无 PATH、内置 FFmpeg、导入、MP4/WebM/MP3 转换、输出探测 | 已通过 |
+| UI 测试 | 导入、错误态、队列、任务操作、格式能力禁用、MP3 无音轨说明、高级面板、命令预览、ETA、快捷键、窄窗口 | 已覆盖 |
+| 打包目录 E2E | `release/win-unpacked` 真实启动、无 PATH、内置 FFmpeg、导入、MP4/WebM/MP3、高级设置转换、输出探测 | 已通过 |
 | 安装包 smoke test | NSIS 静默安装到新目录、启动、无 PATH 转换 | 已通过 |
 | 便携 zip E2E | 解压完整目录 zip、启动、无 PATH 转换 | 已通过 |
 | 卸载 smoke test | NSIS 静默卸载、安装目录清理 | 已通过 |
@@ -33,11 +33,11 @@ npm run dist:win
 当前基线（2026-10-22）：
 
 ```text
-npm test          6 个测试文件，112 个测试全部通过，无 skip
+npm test          7 个测试文件，124 个测试全部通过，无 skip
 npm run typecheck 通过
 npm run build     main / preload / renderer 构建通过
 npm run dist:dir  目录版构建成功
-npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 真实转换通过
+npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 + 高级设置真实转换通过
 ```
 
 测试文件：
@@ -50,6 +50,7 @@ npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 真实转换通过
 | `test/phase-04-polish.test.tsx` | 拖拽、输出操作、关闭保护、快捷键、任务 UI |
 | `test/phase-05-delivery.test.tsx` | 随包目录布局、打包配置、环境面板移除、FFmpeg 错误恢复 |
 | `test/phase-06-formats.test.tsx` | 编码器能力矩阵、WebM/MP3 参数、输出 profile 校验、队列音频拒绝、真实输出、UI |
+| `test/phase-07-advanced.test.tsx` | 分辨率/CRF/音频码率/音频模式、主进程校验、命令预览、speed/ETA、队列 telemetry、UI、真实高级转换 |
 
 每个测试自动输出 START / STEP / PASS 或 FAIL，失败时带错误对象。
 
@@ -66,11 +67,13 @@ npm run e2e:packaged 目录版无 PATH 下 MP4/WebM/MP3 真实转换通过
 - 真实 WebM（VP9 + Opus）与 MP3 转换；
 - 真实 `ffmpeg -encoders` 能力探测；
 - 无音轨 MP3 入队拒绝；
+- 真实 480p 缩放、CRF 18、移除音轨；
+- 真实 `speed`/ETA 进度更新；
 - 真实取消和临时文件清理。
 
 真实 FFmpeg 用例依赖构建机的 FFmpeg。M1 之后，`resources/ffmpeg/<platform>-<arch>/` 存在时会优先使用随包版本。
 
-## 4. 打包版 E2E（M1 交付链 + M2 格式）
+## 4. 打包版 E2E（M1 交付链 + M2 格式 + M3 高级设置）
 
 ### 4.1 目录版
 
@@ -92,8 +95,9 @@ npm run e2e:packaged
 7. 读取 `getConversionCapabilities()`，确认五个编码器和 MP4/WebM/MP3 均可用；
 8. 直接走受控 IPC 依次启动 MP4、WebM、MP3 转换，等待任务队列显示全部完成；
 9. 检查三个输出文件非空，并用随包 `ffprobe` 验证视频/音频编码；
-10. 检查页面不包含“运行环境 / FFmpeg 路径 / Node.js”；
-11. 保存 `docs/evidence/phase6-formats.png` 与 `docs/evidence/phase6-mp3.png`。
+10. 用 1280×720 输入发起高级 MP4 转换（480p、CRF 18、移除音轨），验证输出为 854×480 且无音频；
+11. 检查页面不包含“运行环境 / FFmpeg 路径 / Node.js”；
+12. 保存 `docs/evidence/phase6-formats.png`、`phase6-mp3.png` 和 `phase7-advanced.png`。
 
 真实结果：
 
@@ -109,9 +113,10 @@ importMode: drag-drop
 MP4:  阶段五 真实 视频_converted.mp4，49,555 字节，H.264 640×360 + AAC
 WebM: 阶段五 真实 视频_converted.webm，73,708 字节，VP9 640×360 + Opus
 MP3:  阶段五 真实 视频_converted.mp3，67,019 字节，MP3 音频，无视频轨道
+高级 MP4: 阶段七 高级 视频_converted.mp4，45,186 字节，H.264 854×480，无音频
 ```
 
-> 4.2 / 4.3 是 M1 基线历史结果。M2 的 E2E 脚本已扩展为读取能力并转换 MP4/WebM/MP3；当前 `release/` 里的旧安装包和 zip 不包含 M2 能力，不能直接复用新脚本。M6 重建后再执行同样验收。
+> 4.2 / 4.3 是 M1 基线历史结果。M2/M3 的 E2E 脚本已扩展为能力探测、MP4/WebM/MP3 和高级设置；当前 `release/` 里的旧安装包和 zip 仍不包含 M2/M3 能力，不能直接复用新脚本。M6 重建后再执行同样验收。
 
 ### 4.2 安装包
 
@@ -208,6 +213,30 @@ MP3:  MP3 音频，无视频轨道，任务 completed
 
 打包版抽测见第 4.1 节，已覆盖 MP4、WebM、MP3 各一次。该抽测对象是重新构建的 `release/win-unpacked`；安装包和 zip 仍是 M1 基线，M6 重建后再执行同样抽测。
 
+## 5.1 M3 高级设置、命令预览与动态 ETA
+
+自动化覆盖：
+
+```text
+test/phase-07-advanced.test.tsx
+- 分辨率参数：720p 生成 scale=-2:720:flags=lanczos；原始分辨率不生成 -vf；小源视频不放大
+- 自定义 CRF、音频码率、移除音轨真实进入参数；MP3 不允许移除音轨
+- 主进程校验分辨率、CRF 18–30、音频码率 128/192/256、音频模式；非法值拒绝
+- 命令预览包含同一组参数，空格路径加引号
+- speed=1.23x 解析；最近 5 个样本平滑；不足两个样本显示估算中
+- 队列将 telemetry 写入任务；完成后清除 speed/ETA
+- 高级面板默认折叠；修改分辨率回调完整设置；复制命令
+- 运行中显示已用/剩余/速度；未知时显示估算中
+- 真实 1280×720 → 480p、CRF 18、移除音轨；FFprobe 确认 854×480 且无音频
+```
+
+真实结果：
+
+```text
+高级 MP4: 45,186 字节，H.264 854×480，无音频
+ETA: 真实转换中观察到 speed > 0 且 etaSeconds 非空
+```
+
 ## 6. 手工 / 未自动化项
 
 | 项目 | 原因 | 当前证据 |
@@ -229,6 +258,9 @@ MP3:  MP3 音频，无视频轨道，任务 completed
 - 移除 PATH 后应用回退到系统 FFmpeg，或显示“未就绪”；
 - 输出文件未经过退出码、临时文件、最终文件非空和 FFprobe 编码校验；
 - WebM/MP3 输出编码或轨道与 profile 不符，却仍标记为完成；
+- 命令预览与实际执行参数不一致；
+- speed 或 ETA 未知时显示具体假倒计时；
+- 高级设置越界值被接受，或分辨率对小源视频放大；
 - 无音轨 MP3 仍启动 FFmpeg 或显示为可用；
 - 失败任务被标记为完成；
 - 主界面重新出现 Electron/Node/FFmpeg 版本或路径面板；
@@ -237,9 +269,8 @@ MP3:  MP3 音频，无视频轨道，任务 completed
 
 ## 8. 后续补充
 
-M3/M6 完成后需要追加：
+M4/M6 完成后需要追加：
 
-- 高级设置、命令预览与实际参数一致性；
-- 动态 ETA 真实 `speed` 采样；
+- 完成提示音的播放/静音/失败不播放；
 - 输出设置持久化与损坏配置回退；
 - M6 干净 VM 的安装、取消、打开输出、卸载完整流程。

@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent } from 'react';
 import {
+  DEFAULT_ADVANCED_SETTINGS,
+  buildPreviewOutputPath,
   getOutputFormat,
+  isAudioOnlyFormat,
+  type AdvancedConversionSettings,
   type ConversionJob,
   type ConversionUpdate,
   type OutputFormat,
   type QualityPresetId,
 } from '../shared/conversion';
+import {
+  buildConversionArgs,
+  formatCommandForDisplay,
+} from '../shared/conversion-args';
 import type { ConversionCapabilities } from '../shared/capabilities';
 import type { FfmpegStatus, MediaItem } from '../shared/media';
 import { AppShell } from './components/AppShell';
@@ -30,6 +38,9 @@ export default function App() {
   const [format, setFormat] = useState<OutputFormat>('mp4');
   const [qualityPreset, setQualityPreset] =
     useState<QualityPresetId>('compatible');
+  const [advanced, setAdvanced] = useState<AdvancedConversionSettings>({
+    ...DEFAULT_ADVANCED_SETTINGS,
+  });
   const [outputDirectory, setOutputDirectory] = useState<string | null>(null);
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [starting, setStarting] = useState(false);
@@ -58,6 +69,48 @@ export default function App() {
   const hasActiveJobs = jobs.some(
     (job) => job.status === 'queued' || job.status === 'running',
   );
+  const previewItem = convertibleItems[0] ?? null;
+  const commandPreview = useMemo(() => {
+    if (!previewItem?.metadata) {
+      return null;
+    }
+
+    try {
+      const outputPath = buildPreviewOutputPath(
+        outputDirectory,
+        previewItem.fileName,
+        format,
+      );
+      const args = buildConversionArgs({
+        inputPath: previewItem.path,
+        outputPath,
+        format,
+        qualityPreset,
+        hasAudio:
+          previewItem.metadata.hasAudio && advanced.audioMode !== 'remove',
+        sourceWidth: previewItem.metadata.width,
+        sourceHeight: previewItem.metadata.height,
+        advanced,
+      });
+      const executable =
+        ffmpeg.status === 'ready'
+          ? (ffmpeg.info.ffmpegPath ?? 'ffmpeg')
+          : 'ffmpeg';
+      return formatCommandForDisplay(executable, args);
+    } catch {
+      return null;
+    }
+  }, [
+    advanced,
+    ffmpeg,
+    format,
+    outputDirectory,
+    previewItem,
+    qualityPreset,
+  ]);
+  const previewNote = previewItem
+    ? `示例：${previewItem.fileName}；实际输出名会自动避让同名文件。`
+    : '导入视频后可预览实际参数。';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -340,6 +393,17 @@ export default function App() {
   const handleFormatChange = useCallback((next: OutputFormat) => {
     setFormat(next);
     setConversionError(null);
+    if (isAudioOnlyFormat(next)) {
+      setAdvanced((current) => ({ ...current, audioMode: 'keep' }));
+    }
+  }, []);
+
+  const handleCopyCommand = useCallback(async (command: string) => {
+    const api = window.desktopAPI;
+    if (!api) {
+      throw new Error('桌面桥接未加载');
+    }
+    await api.copyText(command);
   }, []);
 
   const handleStartConversion = useCallback(async () => {
@@ -375,6 +439,7 @@ export default function App() {
           format,
           qualityPreset,
           outputDirectory,
+          advanced,
         },
       });
 
@@ -391,6 +456,7 @@ export default function App() {
       }
     }
   }, [
+    advanced,
     capabilities,
     convertibleItems,
     ffmpeg.status,
@@ -585,10 +651,15 @@ export default function App() {
               capabilitiesLoading={capabilitiesLoading}
               capabilitiesError={capabilitiesError}
               audioOnlyExcludedCount={audioOnlyExcludedCount}
+              advanced={advanced}
+              commandPreview={commandPreview}
+              previewNote={previewNote}
               onFormatChange={handleFormatChange}
               onQualityPresetChange={setQualityPreset}
+              onAdvancedChange={setAdvanced}
               onChooseDirectory={handleChooseDirectory}
               onRefreshCapabilities={loadCapabilities}
+              onCopyCommand={handleCopyCommand}
               onStart={handleStartConversion}
             />
           ) : null}

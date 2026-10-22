@@ -113,10 +113,70 @@ export const QUALITY_PRESETS = [
 export type QualityPresetId = (typeof QUALITY_PRESETS)[number]['id'];
 export type QualityPreset = (typeof QUALITY_PRESETS)[number];
 
+/** 高级设置的分辨率目标；original 表示不缩放，且任何目标都不放大。 */
+export const RESOLUTION_PRESETS = [
+  {
+    id: 'original',
+    label: '原始分辨率',
+    height: null,
+    description: '不缩放，保留源视频尺寸',
+  },
+  {
+    id: '1080p',
+    label: '1080p',
+    height: 1080,
+    description: '最高 1920×1080，不放大',
+  },
+  {
+    id: '720p',
+    label: '720p',
+    height: 720,
+    description: '最高 1280×720，不放大',
+  },
+  {
+    id: '480p',
+    label: '480p',
+    height: 480,
+    description: '最高 854×480，不放大',
+  },
+] as const;
+
+export type ResolutionPresetId = (typeof RESOLUTION_PRESETS)[number]['id'];
+
+export const AUDIO_BITRATE_OPTIONS = [128, 192, 256] as const;
+export type AudioBitrateKbps = (typeof AUDIO_BITRATE_OPTIONS)[number];
+
+export const AUDIO_MODES = [
+  { id: 'keep', label: '保留音轨' },
+  { id: 'remove', label: '移除音轨' },
+] as const;
+
+export type AudioMode = (typeof AUDIO_MODES)[number]['id'];
+
+export const MIN_CRF = 18;
+export const MAX_CRF = 30;
+
+export interface AdvancedConversionSettings {
+  resolution: ResolutionPresetId;
+  /** null 表示跟随质量预设。 */
+  audioBitrateKbps: AudioBitrateKbps | null;
+  /** null 表示跟随质量预设；允许范围 18–30。 */
+  crf: number | null;
+  audioMode: AudioMode;
+}
+
+export const DEFAULT_ADVANCED_SETTINGS: AdvancedConversionSettings = {
+  resolution: 'original',
+  audioBitrateKbps: null,
+  crf: null,
+  audioMode: 'keep',
+};
+
 export interface ConversionSettings {
   format: OutputFormat;
   qualityPreset: QualityPresetId;
   outputDirectory: string;
+  advanced: AdvancedConversionSettings;
 }
 
 export type ConversionJobStatus =
@@ -138,6 +198,12 @@ export interface ConversionJob {
   logExcerpt: string | null;
   startedAt: number | null;
   finishedAt: number | null;
+  /** 从真实运行开始到最近一次进度更新的墙钟耗时。 */
+  elapsedMs: number | null;
+  /** FFmpeg 最近几个 speed 样本的平均值；没有真实 speed 时为 null。 */
+  speed: number | null;
+  /** 只用真实 speed 和剩余时长计算的预计秒数；未知时为 null。 */
+  etaSeconds: number | null;
 }
 
 export interface StartConversionsRequest {
@@ -167,4 +233,54 @@ export function getQualityPreset(id: QualityPresetId): QualityPreset {
 
 export function isAudioOnlyFormat(format: OutputFormat): boolean {
   return getOutputFormat(format).kind === 'audio';
+}
+
+export function isResolutionPresetId(
+  value: unknown,
+): value is ResolutionPresetId {
+  return RESOLUTION_PRESETS.some((preset) => preset.id === value);
+}
+
+export function isAudioBitrateKbps(
+  value: unknown,
+): value is AudioBitrateKbps {
+  return AUDIO_BITRATE_OPTIONS.some((bitrate) => bitrate === value);
+}
+
+export function isAudioMode(value: unknown): value is AudioMode {
+  return AUDIO_MODES.some((mode) => mode.id === value);
+}
+
+export function isCrfInRange(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_CRF &&
+    value <= MAX_CRF
+  );
+}
+
+export function getResolutionHeight(
+  resolution: ResolutionPresetId,
+): number | null {
+  return (
+    RESOLUTION_PRESETS.find((preset) => preset.id === resolution)?.height ?? null
+  );
+}
+
+/**
+ * 为命令预览生成一个示例输出路径。
+ *
+ * 真正入队时仍由 output.ts 检查目录并避让同名文件；这里只用于只读预览。
+ */
+export function buildPreviewOutputPath(
+  directory: string | null,
+  sourceFileName: string,
+  format: OutputFormat,
+): string {
+  const base = sourceFileName.replace(/\.[^./\\]+$/, '');
+  const prefix = directory
+    ? `${directory.replace(/[\\/]+$/, '')}\\`
+    : '<输出目录>\\';
+  return `${prefix}${base}_converted.${getOutputFormat(format).extension}`;
 }

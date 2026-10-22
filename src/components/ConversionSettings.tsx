@@ -4,6 +4,7 @@ import {
   QUALITY_PRESETS,
   getOutputFormat,
   getQualityPreset,
+  type AdvancedConversionSettings,
   type OutputFormat,
   type QualityPresetId,
 } from '../../shared/conversion';
@@ -11,6 +12,7 @@ import {
   getFormatCapability,
   type ConversionCapabilities,
 } from '../../shared/capabilities';
+import { AdvancedSettings } from './AdvancedSettings';
 
 interface ConversionSettingsProps {
   format: OutputFormat;
@@ -24,10 +26,15 @@ interface ConversionSettingsProps {
   capabilitiesLoading: boolean;
   capabilitiesError: string | null;
   audioOnlyExcludedCount: number;
+  advanced: AdvancedConversionSettings;
+  commandPreview: string | null;
+  previewNote: string;
   onFormatChange: (format: OutputFormat) => void;
   onQualityPresetChange: (preset: QualityPresetId) => void;
+  onAdvancedChange: (advanced: AdvancedConversionSettings) => void;
   onChooseDirectory: () => void;
   onRefreshCapabilities: () => void;
+  onCopyCommand: (command: string) => Promise<void>;
   onStart: () => void;
 }
 
@@ -43,10 +50,15 @@ export function ConversionSettings({
   capabilitiesLoading,
   capabilitiesError,
   audioOnlyExcludedCount,
+  advanced,
+  commandPreview,
+  previewNote,
   onFormatChange,
   onQualityPresetChange,
+  onAdvancedChange,
   onChooseDirectory,
   onRefreshCapabilities,
+  onCopyCommand,
   onStart,
 }: ConversionSettingsProps) {
   const formatOption = getOutputFormat(format);
@@ -175,6 +187,17 @@ export function ConversionSettings({
               : preset.description}
           </p>
         </div>
+
+        <AdvancedSettings
+          advanced={advanced}
+          format={format}
+          qualityPreset={qualityPreset}
+          disabled={disabled || starting}
+          commandPreview={commandPreview}
+          previewNote={previewNote}
+          onAdvancedChange={onAdvancedChange}
+          onCopyCommand={onCopyCommand}
+        />
 
         <div>
           <span className="mb-1.5 block text-xs font-medium text-slate-300">

@@ -1253,7 +1253,111 @@ MP3:  67,019 字节，MP3 音频，无视频轨道
 
 ### 未完成 / 风险
 
-- 高级设置、命令预览、动态 ETA 仍待 M3；
+- M4/M5 等 M2/M3 验收后再确定；
 - 安装包/zip 尚未包含 M2 功能；
 - GPL 合规、代码签名、独立干净 VM 验收仍在 M6 前处理；
+- AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。
+
+---
+
+## 2026-10-22 / M3：高级设置 + 命令预览 + 动态 ETA
+
+### 目标
+
+在稳定格式链路之上增加可调试性，但不破坏普通用户主流程：
+
+- 分辨率、CRF、音频码率、音频模式可调；
+- 命令预览与实际执行共用同一份参数；
+- ETA 只来自真实 FFmpeg `speed`，不伪造倒计时；
+- 所有高级输入由主进程校验。
+
+### 测试先行
+
+新增 `test/phase-07-advanced.test.tsx`，覆盖 12 个用例：
+
+- 720p 缩放参数、原始分辨率无 `-vf`、小源视频不放大；
+- 自定义 CRF、音频码率、移除音轨；
+- MP3 禁止移除音轨；
+- 命令预览包含同一组参数和带空格路径；
+- 主进程拒绝 CRF 越界、非法音频码率、非法分辨率/音频模式；
+- `speed` 解析、5 样本平滑、不足两个样本无 ETA；
+- 队列 telemetry 和完成后清除 ETA；
+- 高级面板默认折叠、修改回调和复制命令；
+- 任务 UI 已用/剩余/速度；
+- App 把界面高级设置原样提交给主进程；
+- 真实 1280×720 → 480p、CRF 18、移除音轨。
+
+真实 RED：`test-results/phase7-advanced-red.log`，首次运行因 `shared/conversion-args` 尚不存在而失败。实现后仍有 3 个失败，分别暴露：参数构造未在 builder 内处理 `audioMode=remove`、队列首个 running 快照没有 telemetry、真实测试误读了入队时的旧任务快照；修正后 GREEN 记录在 `test-results/phase7-advanced-green.log`。
+
+### 实现
+
+1. 共享契约
+   - `shared/conversion.ts`：高级设置模型、默认值、分辨率/音频码率/音频模式/CRF 校验辅助、预览输出路径；
+   - `shared/conversion-args.ts`：唯一参数构造和 `formatCommandForDisplay()`；主进程 `conversion/args.ts` 只重新导出，renderer 预览调用同一函数。
+
+2. 主进程
+   - `conversion/validation.ts`：解析并校验高级设置；MP3 的 `audioMode=remove` 直接拒绝；
+   - `conversion/queue.ts`：`assertSettings()` 二次校验；任务增加 `elapsedMs` / `speed` / `etaSeconds`；完成、取消、失败后清除过期 ETA；
+   - `conversion/progress.ts`：解析真实 `speed=1.23x`，最近 5 个样本平均；不足两个样本保持 null；每个 progress tick 发送 telemetry；
+   - `conversion/runner.ts`：探测源宽高；把分辨率、CRF、音频码率和音频模式传给参数构造；移除音轨时输出验证按“期望无音频”检查。
+
+3. renderer
+   - `src/components/AdvancedSettings.tsx`：默认折叠、分辨率/CRF/音频码率/音频模式、只读命令预览、复制命令；
+   - `src/App.tsx`：高级状态、预览源和真实 FFmpeg 路径、复制 IPC、切换 MP3 时强制保留音轨；
+   - `src/components/JobQueue.tsx`：显示真实“已用 / 剩余 / 速度”，未知时显示“估算中”。
+
+### 测试与构建结果
+
+```text
+npx vitest run test/phase-07-advanced.test.tsx   12/12 通过（含 1 个真实转换）
+npm test                                         7 个文件，124/124 通过，无 skip
+npm run typecheck                                通过
+npm run build                                    main / preload / renderer 构建通过
+npm run dist:dir                                 win-unpacked 构建成功
+```
+
+真实高级转换：
+
+```text
+输入: 1280×720，5 秒，带音频
+设置: 480p + CRF 18 + 移除音轨
+输出: H.264 854×480，无音频，45,186 字节（打包版 E2E）
+ETA: 真实转换中捕获 speed > 0 且 etaSeconds 非空
+```
+
+### 打包版无 PATH E2E
+
+`scripts/e2e-packaged.mjs` 在原有 MP4/WebM/MP3 基础上新增：
+
+- 1280×720 高级输入；
+- 高级 MP4 转换（480p、CRF 18、移除音轨）；
+- FFprobe 断言 854×480 且无音频；
+- 真实 UI 打开高级面板、选择 480p、等待命令预览，并保存截图。
+
+结果：
+
+```text
+PATH: null
+FRAMEFORGE_FFMPEG_DIR: null
+source: bundled
+ffmpeg: 8.0.1
+高级 MP4: 45,186 字节，H.264 854×480，无音频
+截图: docs/evidence/phase7-advanced.png
+```
+
+### 遇到的问题
+
+- 参数构造最初只信任调用方传入的 `hasAudio`，直接调用 builder 时 `audioMode=remove` 没有生成 `-an`；改为在 builder 内统一计算 `keepAudio`。
+- 队列测试用 `find(status === 'running')` 取到了开始时的空 telemetry 快照；改为查找带真实 speed 的 running 更新。
+- 真实转换测试在 `waitForIdle()` 后读取入队返回的旧对象，状态仍是 queued；改为从队列重新取任务。
+- 命令预览需要渲染端可用的纯函数，因此把参数构造移到 `shared/`；主进程保留 re-export，避免测试和调用方大改。
+- E2E 首版高级截图被内部滚动容器裁掉命令预览；通过 CDP 临时提高视口高度后重新截取。
+- M3 只重建了 `win-unpacked`；安装包和 zip 仍是 M1 基线，M6 功能冻结后统一重建。
+
+### 未完成 / 风险
+
+- 按约定停在 M2/M3，等开发者验收真实行为、UI 和证据；
+- M4 完成提示音、输出设置持久化；M5 视觉方向待开发者给参考后调整；
+- 安装包/zip 尚未包含 M2/M3 功能；
+- 代码签名、GPL 合规、独立干净 VM 验收仍在 M6 前处理；
 - AOCI 完整索引仍为 0 条 Entry，本轮未在空索引上强行生成语义。

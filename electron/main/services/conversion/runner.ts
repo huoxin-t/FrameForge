@@ -11,6 +11,7 @@
 import { rename as fsRename, rm as fsRm, stat } from 'node:fs/promises';
 import type { FfmpegStatus } from '../../../../shared/media';
 import {
+  DEFAULT_ADVANCED_SETTINGS,
   getOutputFormat,
   type ConversionJob,
   type ConversionSettings,
@@ -24,6 +25,7 @@ import {
   type OutputProbeResult,
 } from '../media/probe';
 import { buildConversionArgs } from './args';
+import type { ProgressTelemetry } from './progress';
 import {
   buildTemporaryOutputPath,
   pathExists as defaultPathExists,
@@ -35,6 +37,8 @@ const logger = createLogger('conversion-runner');
 export interface ConversionProbeResult {
   durationMs: number | null;
   hasAudio: boolean;
+  width: number | null;
+  height: number | null;
 }
 
 export interface ConversionRunnerDependencies {
@@ -55,7 +59,7 @@ export interface ConversionRunnerDependencies {
 
 export interface RunConversionOptions {
   signal: AbortSignal;
-  onProgress: (progress: number) => void;
+  onProgress: (progress: number, telemetry?: ProgressTelemetry) => void;
 }
 
 export interface ConversionRunResult {
@@ -120,6 +124,8 @@ export class ConversionRunner {
 
     const temporaryPath = buildTemporaryOutputPath(job.outputPath, job.id);
     const parser = new FfmpegProgressParser(probe.durationMs, options.onProgress);
+    const advanced = settings.advanced ?? DEFAULT_ADVANCED_SETTINGS;
+    const keepAudio = probe.hasAudio && advanced.audioMode !== 'remove';
 
     logger.info('Conversion started', {
       jobId: job.id,
@@ -128,8 +134,11 @@ export class ConversionRunner {
       temporaryPath,
       format: settings.format,
       qualityPreset: settings.qualityPreset,
+      advanced,
       durationMs: probe.durationMs,
+      sourceSize: `${probe.width ?? '?'}x${probe.height ?? '?'}`,
       hasAudio: probe.hasAudio,
+      keepAudio,
     });
 
     try {
@@ -140,7 +149,10 @@ export class ConversionRunner {
           outputPath: temporaryPath,
           format: settings.format,
           qualityPreset: settings.qualityPreset,
-          hasAudio: probe.hasAudio,
+          hasAudio: keepAudio,
+          sourceWidth: probe.width,
+          sourceHeight: probe.height,
+          advanced,
         }),
         signal: options.signal,
         onStdout: (chunk) => parser.push(chunk),
@@ -168,7 +180,7 @@ export class ConversionRunner {
         throw new ConversionError('输出文件为空，任务未完成');
       }
 
-      await this.verifyOutput(job, settings, probe.hasAudio, status.ffprobePath);
+      await this.verifyOutput(job, settings, keepAudio, status.ffprobePath);
 
       logger.info('Conversion completed', {
         jobId: job.id,
@@ -349,6 +361,8 @@ export function createConversionRunner(
       return {
         durationMs: metadata.durationMs,
         hasAudio: metadata.hasAudio,
+        width: metadata.width,
+        height: metadata.height,
       };
     },
   });

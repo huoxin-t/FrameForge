@@ -1,8 +1,8 @@
-# FrameForge 会话总结（M1 交付基线 + M2 格式能力）
+# FrameForge 会话总结（M1 交付基线 + M2 格式能力 + M3 高级设置）
 
 > 记录时间：2026-10-22
 >
-> 对应阶段：阶段 0–4 功能实现 + M0/M1 Windows 交付基线 + M2 格式能力层
+> 对应阶段：阶段 0–4 功能实现 + M0/M1 Windows 交付基线 + M2 格式能力层 + M3 高级设置/命令预览/动态 ETA
 >
 > 本文是给开发者、面试官和后续接手者看的会话总结；真实命令、RED/GREEN 和问题细节在 [AI_DEVELOPMENT_LOG.md](AI_DEVELOPMENT_LOG.md)。
 
@@ -33,6 +33,9 @@
 - WebM 使用 VP9 + Opus，无音轨输入使用 `-an`；
 - MP3 仅音频输出；无音轨视频在入队阶段拒绝；
 - 输出完成后用 FFprobe 校验容器/编码/轨道与所选 profile 一致；
+- 高级设置：分辨率（原始/1080p/720p/480p，不放大、偶数宽度）、CRF 18–30、音频码率 128/192/256、保留/移除音频；
+- 高级面板默认折叠；只读命令预览与实际执行共用 `buildConversionArgs()`，支持复制；
+- 动态 ETA：解析真实 FFmpeg `speed`，最近 5 个样本平滑；不足两个样本显示“估算中”；UI 显示已用/剩余/速度；
 - 串行任务队列、进度、取消、失败隔离；
 - 输出临时文件、退出码校验、最终文件非空校验；
 - `_converted` 命名和冲突避让；
@@ -42,14 +45,13 @@
 - FFmpeg/FFprobe、DLL、LICENSE、README 随安装包分发；
 - NSIS 安装包、完整目录 zip、自定义图标；
 - 无系统 PATH 的目录版和安装版真实 E2E；
-- 112 个自动化测试全部通过，无 skip；
+- 124 个自动化测试全部通过，无 skip；
 - README、开发者教程、测试计划、FFmpeg 分发说明、第三方声明、开发日志。
 
 ### 未完成
 
-- M3：高级设置、只读命令预览、动态 ETA；
-- M4：完成提示音、输出设置持久化（可选）；
-- M5：整体视觉重做；
+- M4：完成提示音、输出设置持久化（可选）；等开发者验收 M2/M3 后再细化；
+- M5：整体视觉重做；等开发者给出设计参考和组件策略后调整；
 - M6：最终安装包、独立干净 VM 的安装/取消/打开输出/卸载、`SESSION_SUMMARY.md` 最终版、GitHub Release；
 - 代码签名；
 - GPL 合规的最终法律确认；
@@ -67,6 +69,8 @@
 | 串行队列 | MVP 范围可控，失败隔离和取消逻辑可验证 |
 | 进度只来自 `-progress pipe:1` | 不用定时器伪造进度 |
 | `OutputProfile` 作为唯一格式来源 | 扩展名、编码器、参数和 UI 不再靠 if/else 堆叠 |
+| `shared/conversion-args.ts` 同时服务执行与预览 | 避免“预览一套、实际执行另一套”的漂移 |
+| ETA 只用真实 `speed`，不足样本显示估算中 | 不伪造倒计时；取消/完成后清除过期值 |
 | 能力探测先于 UI 可用性 | 不把当前 FFmpeg 构建不支持的格式显示为可用 |
 | FFmpeg 按 `<platform>-<arch>` 分层 | 为 Windows/Mac 和不同架构预留，避免硬编码 |
 | 当前使用 shared build | 本机已有可用构建；通过整目录 DLL 复制和无 PATH E2E 验证 |
@@ -79,7 +83,7 @@
 ### 4.1 自动化测试
 
 ```text
-npm test           6 个测试文件，112 个测试全部通过，无 skip
+npm test           7 个测试文件，124 个测试全部通过，无 skip
 npm run typecheck  通过
 npm run build      main / preload / renderer 构建通过
 ```
@@ -91,7 +95,8 @@ npm run build      main / preload / renderer 构建通过
 - `phase-03-conversion.test.tsx`：参数、进度、队列、真实转换、取消；
 - `phase-04-polish.test.tsx`：拖拽、输出操作、关闭保护、快捷键；
 - `phase-05-delivery.test.tsx`：随包布局、打包配置、环境面板移除；
-- `phase-06-formats.test.tsx`：能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI。
+- `phase-06-formats.test.tsx`：能力矩阵、WebM/MP3 参数、输出校验、真实格式转换、UI；
+- `phase-07-advanced.test.tsx`：高级设置参数、主进程校验、命令预览、速度平滑、队列 telemetry、UI、真实 480p/移除音轨转换。
 
 ### 4.2 打包版无 PATH E2E
 
@@ -107,12 +112,14 @@ importMode: drag-drop
 MP4:  49,555 字节，H.264 640×360 + AAC
 WebM: 73,708 字节，VP9 640×360 + Opus
 MP3:  67,019 字节，MP3 音频，无视频轨道
+高级 MP4: 45,186 字节，H.264 854×480，无音频（CRF 18 + 480p + 移除音轨）
 ```
 
 截图：
 
 - `docs/evidence/phase6-formats.png`：WebM 格式与能力说明；
 - `docs/evidence/phase6-mp3.png`：仅音频 MP3 设置；
+- `docs/evidence/phase7-advanced.png`：高级设置与只读命令预览；
 - `docs/evidence/phase5-installed.png`：M1 安装版；
 - `docs/evidence/phase5-packaged.png`：M1 目录版；
 - `docs/evidence/phase5-zip.png`：M1 完整目录 zip。
@@ -127,7 +134,7 @@ release/FrameForge-0.1.0-win.zip     230.6 MB（M1 基线）
 - NSIS 静默安装到新目录，安装器退出码 0；安装目录包含完整 FFmpeg 资源、许可证和 `THIRD_PARTY_NOTICES.md`；
 - 完整目录 zip 解压后同样通过无 PATH E2E，`source: "bundled"`；
 - `Uninstall FrameForge.exe /S` 退出码 0，安装目录被清理；
-- M2 的 WebM/MP3 打包版验证使用重新构建的 `release/win-unpacked`；安装包和 zip 在 M6 功能冻结后统一重建。
+- M2/M3 的打包版验证使用重新构建的 `release/win-unpacked`；安装包和 zip 仍是 M1 基线，在 M6 功能冻结后统一重建。
 
 ## 5. 用户反馈如何落实
 
@@ -158,17 +165,17 @@ release/FrameForge-0.1.0-win.zip     230.6 MB（M1 基线）
 - 安装包未签名，可能出现 SmartScreen 提示；
 - 独立干净 Windows VM 尚未执行完整安装/卸载验收；
 - 当前只在新目录安装、zip 解压和静默卸载的本机环境验证；
-- M2 的安装包/zip 尚未重建；当前 M2 证据使用 `release/win-unpacked`；
-- 高级设置、命令预览、动态 ETA 待 M3；
-- 视觉方向待开发者确认；
+- M2/M3 的安装包/zip 尚未重建；当前证据使用 `release/win-unpacked`；
+- 输出目录、格式、质量预设和高级设置尚未持久化；
+- 视觉方向待开发者给出参考后再调整 M5；
 - Mac 只预留架构，不承诺可用。
 
 ## 8. 下一步
 
-1. M2 已本地提交；网络恢复后推送到 `origin/main`；
-2. 进入 M3：高级设置、命令预览、动态 ETA；
-3. M4 可选 polish；
-4. M5 视觉；
+1. M2/M3 已本地提交；网络恢复后推送到 `origin/main`；
+2. 按约定停在这里，等开发者检验 M2/M3 的真实行为、UI 和证据；
+3. 验收后再细化 M4 可选 polish；
+4. M5 根据开发者参考调整视觉方向；
 5. M6 重建最终安装包/zip、独立干净 VM、`SESSION_SUMMARY.md` 最终版、GitHub Release。
 
 详细计划见 [DELIVERY_PLAN.md](DELIVERY_PLAN.md)。

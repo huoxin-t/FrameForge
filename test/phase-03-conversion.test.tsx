@@ -40,10 +40,11 @@ import {
   type AppInfo,
   type DesktopAPI,
 } from '../shared/ipc';
-import type {
-  ConversionJob,
-  ConversionSettings,
-  ConversionUpdate,
+import {
+  DEFAULT_ADVANCED_SETTINGS,
+  type ConversionJob,
+  type ConversionSettings,
+  type ConversionUpdate,
 } from '../shared/conversion';
 import type { FfmpegStatus, MediaItem, MediaMetadata } from '../shared/media';
 import {
@@ -94,6 +95,7 @@ const sampleSettings: ConversionSettings = {
   format: 'mp4',
   qualityPreset: 'compatible',
   outputDirectory: 'C:\\输出 目录',
+  advanced: { ...DEFAULT_ADVANCED_SETTINGS },
 };
 
 /** 生成一个带音轨的 2 秒测试视频，供真实转换使用。 */
@@ -747,7 +749,12 @@ describe('阶段 3 / Runner 失败清理', () => {
         ffprobePath: 'C:\\tools\\ffprobe.exe',
         error: null,
       }),
-      probe: async () => ({ durationMs: 2000, hasAudio: false }),
+      probe: async () => ({
+        durationMs: 2000,
+        hasAudio: false,
+        width: 320,
+        height: 240,
+      }),
       runProcess: async ({ args }) => {
         capturedOutputPath = args[args.length - 1];
         writeFileSync(capturedOutputPath, 'partial output');
@@ -770,6 +777,9 @@ describe('阶段 3 / Runner 失败清理', () => {
       logExcerpt: null,
       startedAt: Date.now(),
       finishedAt: null,
+      elapsedMs: 0,
+      speed: null,
+      etaSeconds: null,
     };
 
     logger.info('STEP 让 Runner 收到非零退出');
@@ -803,7 +813,12 @@ describe('阶段 3 / Runner 失败清理', () => {
         ffprobePath: 'C:\\tools\\ffprobe.exe',
         error: null,
       }),
-      probe: async () => ({ durationMs: 2000, hasAudio: false }),
+      probe: async () => ({
+        durationMs: 2000,
+        hasAudio: false,
+        width: 320,
+        height: 240,
+      }),
       runProcess: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
     });
 
@@ -818,6 +833,9 @@ describe('阶段 3 / Runner 失败清理', () => {
       logExcerpt: null,
       startedAt: Date.now(),
       finishedAt: null,
+      elapsedMs: 0,
+      speed: null,
+      etaSeconds: null,
     };
 
     logger.info('STEP 模拟 FFmpeg 退出码 0 但没有写出文件');
@@ -971,6 +989,9 @@ const queuedJob: ConversionJob = {
   logExcerpt: null,
   startedAt: null,
   finishedAt: null,
+  elapsedMs: null,
+  speed: null,
+  etaSeconds: null,
 };
 
 function stubDesktopApi(overrides: Partial<DesktopAPI> = {}) {
@@ -1088,6 +1109,7 @@ describe('阶段 3 / 转换 UI', () => {
           format: 'mkv',
           qualityPreset: 'quality',
           outputDirectory: 'C:\\输出 目录',
+          advanced: { ...DEFAULT_ADVANCED_SETTINGS },
         },
       });
     });

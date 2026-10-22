@@ -25,9 +25,10 @@ import { parseVideoPaths } from '../electron/main/services/media/import-validati
 import { openExistingDirectory } from '../electron/main/services/system/open-path';
 import { ConversionQueue, type ConversionQueueDependencies } from '../electron/main/services/conversion/queue';
 import { createDesktopApi } from '../electron/preload/api';
-import type {
-  ConversionJob,
-  ConversionSettings,
+import {
+  DEFAULT_ADVANCED_SETTINGS,
+  type ConversionJob,
+  type ConversionSettings,
 } from '../shared/conversion';
 import {
   DESKTOP_API_KEYS,
@@ -95,6 +96,9 @@ const completedJob: ConversionJob = {
   logExcerpt: null,
   startedAt: 100,
   finishedAt: 200,
+  elapsedMs: 100,
+  speed: null,
+  etaSeconds: null,
 };
 
 const failedJob: ConversionJob = {
@@ -108,12 +112,16 @@ const failedJob: ConversionJob = {
   logExcerpt: 'Error while opening encoder for output stream #0:0',
   startedAt: 100,
   finishedAt: 200,
+  elapsedMs: 100,
+  speed: null,
+  etaSeconds: null,
 };
 
 const settings: ConversionSettings = {
   format: 'mp4',
   qualityPreset: 'compatible',
   outputDirectory: 'C:\\输出 目录',
+  advanced: { ...DEFAULT_ADVANCED_SETTINGS },
 };
 
 // ============================================================================

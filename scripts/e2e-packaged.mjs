@@ -40,6 +40,13 @@ const inputPath = join(
   '输入 样本',
   '阶段五 真实 视频.mp4',
 );
+const advancedInputPath = join(
+  root,
+  'test-results',
+  'phase5-e2e',
+  '输入 样本',
+  '阶段七 高级 视频.mp4',
+);
 const outputDirectory = join(
   root,
   'test-results',
@@ -51,6 +58,12 @@ const screenshotPath = process.env.FRAMEFORGE_E2E_SCREENSHOT
   ? resolve(process.env.FRAMEFORGE_E2E_SCREENSHOT)
   : join(root, 'docs', 'evidence', 'phase6-formats.png');
 const mp3ScreenshotPath = join(root, 'docs', 'evidence', 'phase6-mp3.png');
+const advancedScreenshotPath = join(
+  root,
+  'docs',
+  'evidence',
+  'phase7-advanced.png',
+);
 const port = 9335;
 
 class Cdp {
@@ -107,6 +120,7 @@ async function main() {
 
   await prepareDirectories();
   await ensureInputVideo();
+  await ensureAdvancedInputVideo();
 
   const appEnvironment = createIsolatedEnvironment();
   const child = spawn(
@@ -211,6 +225,28 @@ async function main() {
       });
     }
 
+    console.log('START 打包版高级设置真实转换');
+    conversions.advanced = await runFormatConversion({
+      cdp,
+      sourcePath: advancedInputPath,
+      targetDirectory: outputDirectory,
+      spec: {
+        format: 'mp4',
+        qualityPreset: 'quality',
+        advanced: {
+          resolution: '480p',
+          crf: 18,
+          audioBitrateKbps: 128,
+          audioMode: 'remove',
+        },
+        expectedVideo: 'h264',
+        expectedAudio: null,
+        expectedWidth: 854,
+        expectedHeight: 480,
+      },
+      expectedCompleted: 4,
+    });
+
     await selectFormat(cdp, 'webm');
     await waitFor(
       () => evaluate(cdp, `document.body.innerText.includes('VP9 + Opus')`),
@@ -226,6 +262,29 @@ async function main() {
       10_000,
     );
     await captureFullPage(cdp, mp3ScreenshotPath);
+
+    await selectFormat(cdp, 'mp4');
+    await openAdvancedPanel(cdp);
+    await setAdvancedResolution(cdp, '480p');
+    await waitFor(
+      () =>
+        evaluate(
+          cdp,
+          `document.body.innerText.includes('命令预览（只读）') && document.body.innerText.includes('-progress pipe:1')`,
+        ),
+      '高级设置命令预览',
+      10_000,
+    );
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 1344,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(300);
+    await scrollWorkspaceToTop(cdp);
+    await captureFullPage(cdp, advancedScreenshotPath);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
 
     await evaluate(cdp, 'window.close()');
     await waitForExit(child, 5_000);
@@ -254,6 +313,7 @@ async function main() {
           conversions,
           screenshotPath,
           mp3ScreenshotPath,
+          advancedScreenshotPath,
         },
         null,
         2,
@@ -275,6 +335,7 @@ async function prepareDirectories() {
   await mkdir(userDataDirectory, { recursive: true });
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(mp3ScreenshotPath), { recursive: true });
+  await mkdir(dirname(advancedScreenshotPath), { recursive: true });
 }
 
 async function ensureInputVideo() {
@@ -308,6 +369,39 @@ async function ensureInputVideo() {
   ]);
 
   await assertExists(inputPath, 'E2E 输入视频');
+}
+
+async function ensureAdvancedInputVideo() {
+  if (await exists(advancedInputPath)) {
+    return;
+  }
+
+  await runProcess(ffmpegPath, [
+    '-hide_banner',
+    '-v',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc=size=1280x720:rate=30:duration=3',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=660:duration=3',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-shortest',
+    advancedInputPath,
+  ]);
+
+  await assertExists(advancedInputPath, 'E2E 高级设置输入视频');
 }
 
 /** 只保留 Windows/Electron 启动必需变量，移除 PATH 和显式 FFmpeg 覆盖。 */
@@ -396,6 +490,60 @@ async function selectFormat(cdp, format) {
   if (selected !== format) {
     throw new Error(`格式选择失败：期望 ${format}，实际 ${selected}`);
   }
+}
+
+async function openAdvancedPanel(cdp) {
+  await evaluate(
+    cdp,
+    `(() => {
+      const button = [...document.querySelectorAll('button')].find((candidate) =>
+        candidate.textContent?.includes('高级设置'),
+      );
+      if (!button) throw new Error('找不到高级设置按钮');
+      if (button.getAttribute('aria-expanded') !== 'true') {
+        button.click();
+      }
+      return true;
+    })()`,
+  );
+  await waitFor(
+    () => evaluate(cdp, `Boolean(document.querySelector('#advanced-resolution'))`),
+    '高级设置面板',
+    5_000,
+  );
+}
+
+async function setAdvancedResolution(cdp, resolution) {
+  const selected = await evaluate(
+    cdp,
+    `(() => {
+      const select = document.querySelector('#advanced-resolution');
+      if (!select) throw new Error('找不到高级分辨率选择器');
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        'value',
+      ).set;
+      setter.call(select, ${JSON.stringify(resolution)});
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return select.value;
+    })()`,
+  );
+  if (selected !== resolution) {
+    throw new Error(`高级分辨率选择失败：期望 ${resolution}，实际 ${selected}`);
+  }
+}
+
+async function scrollWorkspaceToTop(cdp) {
+  await evaluate(
+    cdp,
+    `(() => {
+      const containers = [...document.querySelectorAll('.overflow-auto')];
+      for (const container of containers) {
+        container.scrollTop = 0;
+      }
+      return true;
+    })()`,
+  );
 }
 
 async function captureFullPage(cdp, targetPath) {
@@ -494,6 +642,7 @@ async function runFormatConversion({
         format: spec.format,
         qualityPreset: spec.qualityPreset,
         outputDirectory: targetDirectory,
+        ...(spec.advanced ? { advanced: spec.advanced } : {}),
       },
     })})`,
   );
@@ -543,13 +692,17 @@ async function runFormatConversion({
     }
   } else if (
     video?.codec_name !== spec.expectedVideo ||
-    video?.width !== 640 ||
-    video?.height !== 360
+    video?.width !== (spec.expectedWidth ?? 640) ||
+    video?.height !== (spec.expectedHeight ?? 360)
   ) {
     throw new Error(`${spec.format} 视频探测异常：${probeText}`);
   }
 
-  if (audio?.codec_name !== spec.expectedAudio) {
+  if (spec.expectedAudio === null) {
+    if (audio) {
+      throw new Error(`${spec.format} 不应包含音频轨道：${probeText}`);
+    }
+  } else if (audio?.codec_name !== spec.expectedAudio) {
     throw new Error(`${spec.format} 音频探测异常：${probeText}`);
   }
 
