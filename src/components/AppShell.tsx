@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Film, FolderOpen, ShieldCheck } from 'lucide-react';
 import type { FfmpegState } from '../types/ui';
+import { CanvasFractalGrid } from './background/CanvasFractalGrid';
 
 interface AppShellProps {
   version?: string;
@@ -51,8 +52,26 @@ export function AppShell({
   return (
     <div className="relative isolate flex h-screen flex-col overflow-hidden bg-[#0b0d12] text-slate-200">
       <div
+        data-testid="app-background"
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_-10%,rgba(251,191,36,0.10),transparent_38%),radial-gradient(circle_at_92%_108%,rgba(56,189,248,0.06),transparent_42%)]"
+        className="pointer-events-none absolute inset-0 -z-10"
+      >
+        <CanvasFractalGrid
+          dotSize={2.5}
+          dotSpacing={22}
+          dotOpacity={0.3}
+          gradientAnimationDuration={10}
+          waveIntensity={44}
+          waveRadius={240}
+          dotColor="rgba(129, 140, 248, 1)"
+          glowColor="rgba(100, 100, 255, 1)"
+          gradientOpacity={0.26}
+          initialPerformance="high"
+        />
+      </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[#0b0d12]/25"
       />
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#0b0d12]/80 px-6 py-3 backdrop-blur">
         <div className="flex items-center gap-3">

@@ -291,6 +291,15 @@ async function main() {
     await captureFullPage(cdp, mp3ScreenshotPath);
 
     await selectFormat(cdp, 'mp4');
+    await waitFor(
+      () =>
+        evaluate(
+          cdp,
+          `document.body.innerText.includes('H.264 CRF')`,
+        ),
+      'MP4 格式摘要',
+      10_000,
+    );
     await openAdvancedPanel(cdp);
     await setAdvancedResolution(cdp, '480p');
     await waitFor(

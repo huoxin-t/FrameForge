@@ -13,6 +13,7 @@
 ## 现在能做什么
 
 - 通过系统文件选择器或拖拽导入本地视频；支持一次多个文件、中文/空格路径。
+- 全局使用 canvas 动态点阵与渐变背景；鼠标移动产生波光，背景层不拦截任何点击或拖拽。
 - 用真实 `ffprobe` 读取时长、分辨率、帧率、容器、视频/音频编码和文件大小。
 - 用真实 `ffmpeg` 抽取缩略图；缩略图失败只显示占位图，不阻塞文件转换。
 - 输出 MP4 / MKV（H.264 + AAC）、WebM（VP9 + Opus）和仅音频 MP3；提供兼容优先、质量优先、体积优先三个质量预设。
@@ -37,6 +38,7 @@
 - Electron 45 + electron-vite 6
 - React 19 + TypeScript 5.9
 - Vite 8 + Tailwind CSS 4
+- motion 12（动态点阵背景）
 - Vitest 5 + Testing Library
 - electron-builder 26（Windows NSIS + zip）
 
@@ -149,6 +151,7 @@ shared/
 src/
   App.tsx                       # 导入、输出设置、高级设置、队列/历史订阅和任务状态
   components/                   # AppShell / FfmpegErrorBanner / EmptyState / MediaCard / MediaList / ConversionSettings / AdvancedSettings / JobQueue / HistoryCard
+  components/background/        # CanvasFractalGrid 动态点阵/渐变背景
 scripts/
   prepare-ffmpeg.mjs            # 复制并真实验证随包 FFmpeg
   e2e-packaged.mjs              # 无 PATH 的打包版/安装版 E2E
@@ -171,6 +174,7 @@ docs/
   DELIVERY_PLAN.md              # P0/P1 交付范围、里程碑与验收标准
   TEST_PLAN.md                  # 自动化、手工验收、未覆盖项
   AI_DEVELOPMENT_LOG.md         # 真实命令、结果、决策与问题
+  UI.md                         # 视觉/动效组件参考
   FFMPEG.md                     # FFmpeg 路径、随包分发与许可证
   LOGGING.md                    # 日志与测试日志约定
 THIRD_PARTY_NOTICES.md          # FFmpeg/Electron/依赖许可证与源码获取方式

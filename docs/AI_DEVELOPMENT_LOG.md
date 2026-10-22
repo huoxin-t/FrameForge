@@ -1504,3 +1504,36 @@ npm run typecheck                              通过
 ```
 
 GREEN：`test-results/phase9-workspace-remove-green.log`，全量：`test-results/phase9-full-suite.log`。
+
+---
+
+## 2026-10-22 / M5 前置：全局动态点阵背景
+
+### 需求
+
+开发者提供 `docs/UI.md`，要求先把整个应用背景替换为其中的 `CanvasFractalGrid`。
+
+### 实现
+
+- 新增 `src/components/background/CanvasFractalGrid.tsx`，保留点阵、鼠标波形/光晕、渐变呼吸、噪声和 FPS 自适应逻辑；
+- 深色主题适配：canvas 使用 `mix-blend-mode: screen`，去掉原组件的浅灰底色；渐变透明度 0.26，避免盖住正文；
+- 点阵颜色使用 indigo，鼠标光晕使用蓝色；背景容器 `pointer-events-none`，不拦截点击/拖拽；
+- `AppShell` 用该组件替换原来的静态径向渐变，header/footer/内容布局不变；
+- 新增依赖 `motion@12`。
+
+### 验证
+
+```text
+npm run typecheck                    通过
+npm test                             8 个文件，140/140 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+CDP 手工检查                         renderer exceptions=0；高级设置真实展开
+```
+
+截图已更新：`docs/evidence/phase6-formats.png`、`phase6-mp3.png`、`phase7-advanced.png`、`phase8-history.png`。
+
+### 过程中的真实问题
+
+- E2E 一次在“高级设置”处超时；独立 CDP 会话证明点击、展开和命令预览都正常，renderer 无异常。原因是选择 MP4 后立即点击高级设置存在时序抖动；E2E 在点击前增加“等待 MP4 格式摘要”，再次完整运行通过。
+- 当前机器执行默认 `npm run dist:dir` 时，electron-builder 解压 Electron 后 rename `win-unpacked.tmp` 报 EPERM；使用 `--config.electronDist=node_modules/electron/dist` 完成打包。该问题是本机文件锁/安全软件层面的构建环境问题，不是应用逻辑；M6 重建安装包时需再次确认。

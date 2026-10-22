@@ -300,6 +300,33 @@ npm test                                        8 个文件，140/140 通过，�
 
 RED/GREEN 日志：`test-results/phase9-workspace-remove-red.log`、`phase9-workspace-remove-green.log`。
 
+## 5.4 M5 前置：全局动态点阵背景
+
+来源：`docs/UI.md` 的 `CanvasFractalGrid` 组件。
+
+实现要点：
+
+```text
+src/components/background/CanvasFractalGrid.tsx
+- canvas 绘制点阵，鼠标附近产生波形偏移和光晕
+- 渐变层通过 motion 做缓慢呼吸动画
+- 深色主题下使用 screen 混合，点阵/渐变不盖住正文
+- 背景容器 pointer-events-none 且位于内容层下方，不拦截点击和拖拽
+- AppShell 只替换原静态径向渐变，不改动业务布局
+```
+
+真实结果：
+
+```text
+npm run typecheck                    通过
+npm test                             8 个文件，140/140 通过，无 skip
+npm run build                        main / preload / renderer 构建通过
+打包版 E2E                           4 个真实转换、历史持久化/恢复/清空通过
+CDP 手工检查                         renderer exceptions=0；高级设置正常展开
+```
+
+截图：`docs/evidence/phase6-formats.png`、`phase6-mp3.png`、`phase7-advanced.png`、`phase8-history.png`（均已更新为新背景）。
+
 ## 6. 手工 / 未自动化项
 
 | 项目 | 原因 | 当前证据 |
@@ -328,7 +355,8 @@ RED/GREEN 日志：`test-results/phase9-workspace-remove-red.log`、`phase9-work
 - 历史记录把 queued/running 中间态写入，或重启后丢失全部完成/失败/取消记录；
 - 清空历史时删除真实输出文件；
 - 用户手动选择输出目录后，后续导入又把它覆盖回源目录；
-- 命令预览无法独立折叠，或折叠状态影响高级设置本身；\n- 转换进行中的媒体仍可被移出工作区，或移除时误删原文件；
+- 命令预览无法独立折叠，或折叠状态影响高级设置本身；
+- 全局背景拦截点击/拖拽，或点阵/渐变导致正文不可读；\n- 转换进行中的媒体仍可被移出工作区，或移除时误删原文件；
 - 无音轨 MP3 仍启动 FFmpeg 或显示为可用；
 - 失败任务被标记为完成；
 - 主界面重新出现 Electron/Node/FFmpeg 版本或路径面板；
