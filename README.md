@@ -1,3 +1,17 @@
+#如何使用
+
+1.在release下载安装包或直接解压版。
+
+2.pull到本地后，可安装相关依赖使用进行打包。
+```
+npm run dist:win
+```
+B站展示
+
+
+
+
+
 # FrameForge（帧铸）
 
 本地视频格式转换桌面客户端。用 Electron + React + TypeScript 调用真实的 `ffmpeg` / `ffprobe`，完成视频导入、媒体信息读取、缩略图、格式转换和串行任务队列。
