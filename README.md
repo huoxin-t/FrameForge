@@ -8,8 +8,13 @@ npm run dist:win
 ```
 # B站展示
 
-
-
+```
+https://www.bilibili.com/video/BV1aUnb6REYh/?share_source=copy_web&vd_source=49ac8ccc1a86ac82565738af2f5e5d94
+```
+BV号
+```
+BV1aUnb6REYh
+```
 
 ----
 # FrameForge（帧铸）
